@@ -1,0 +1,17 @@
+{
+  "name": "nicholas-lonsinger-plugins",
+  "owner": {
+    "name": "Nicholas Lonsinger"
+  },
+  "metadata": {
+    "description": "A collection of Claude Code plugins for developer productivity"
+  },
+  "plugins": [
+    {
+      "name": "setup",
+      "description": "Environment setup utilities for Claude Code — status line, hooks, and configuration",
+      "source": "./setup",
+      "version": "1.0.0"
+    }
+  ]
+}
