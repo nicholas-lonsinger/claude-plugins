@@ -64,8 +64,7 @@ After configuration, read back `~/.claude/settings.json` and confirm the `status
 ### Step 4: Report
 
 Tell the user:
-- The status line is now configured
-- They need to restart Claude Code (or start a new session) for it to take effect
+- The status line is now configured and active
 - The status line shows: model, output style, git branch with worktree/dirty/ahead-behind info, context window usage, and rate limits with pace-based coloring
 
 ## Requirements
