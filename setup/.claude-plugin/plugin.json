@@ -8,6 +8,6 @@
   },
   "repository": "https://github.com/nicholas-lonsinger/claude-plugins",
   "license": "MIT",
-  "keywords": ["setup", "statusline", "configuration", "hooks"],
+  "keywords": ["setup", "statusline", "kernova", "configuration", "hooks"],
   "skills": "./skills/"
 }
