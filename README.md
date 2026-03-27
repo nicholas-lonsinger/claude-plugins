@@ -27,6 +27,7 @@ Environment setup utilities for Claude Code.
 | Skill | Command | Description |
 |-------|---------|-------------|
 | statusline | `/setup:statusline` | Install a custom status line with git info, context window usage, and rate limit monitoring |
+| kernova | `/setup:kernova` | Configure Claude Code for Kernova development — user settings, project local settings, Xcode MCP, and swift-lsp |
 
 #### Status Line Features
 
