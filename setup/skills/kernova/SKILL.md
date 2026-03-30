@@ -8,6 +8,17 @@ allowed-tools: Read, Edit, Write, Bash, Glob, Grep
 
 You are configuring Claude Code for Kernova development on this machine. Follow each phase in order, confirming with the user before writing changes.
 
+## User Overrides
+
+The user may provide free-text instructions after the slash command (e.g., `/setup:kernova put the artifact directory at ~/Downloads/Kernova`). If they do, parse the instructions and apply them as overrides to the defaults below. Common overrides include:
+
+- **Artifact directory** — any mention of changing the shared/artifact directory path should replace all occurrences of `/Volumes/My Shared Files/Kernova` in Phase 4 (`additionalDirectories`, `sandbox.filesystem.allowWrite`).
+- **Project path** — any mention of a different repo location should replace the default `~/Developer/GitHub/nicholas-lonsinger/Kernova` in Phase 4 Step 1.
+- **Skip phases** — if the user says to skip a phase (e.g., "skip Xcode setup"), respect that.
+- **Any other modifications** — apply them where they logically fit. If ambiguous, ask the user for clarification before proceeding.
+
+If no overrides are provided, use all defaults as written below.
+
 ## Phase 1: User-Level Settings
 
 Read `~/.claude/settings.json` (create with `{}` if it doesn't exist). Merge the following keys — do not remove or overwrite any existing keys:
