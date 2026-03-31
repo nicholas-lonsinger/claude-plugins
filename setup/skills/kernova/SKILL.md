@@ -1,6 +1,6 @@
 ---
 name: kernova
-description: Configure Claude Code for Kernova development — user settings, project local settings, Xcode MCP, and swift-lsp
+description: Configure Claude Code for Kernova development — user settings, project local settings, and swift-lsp
 allowed-tools: Read, Edit, Write, Bash, Glob, Grep, AskUserQuestion
 ---
 
@@ -36,18 +36,16 @@ Before presenting any options, silently run ALL of the following checks in paral
 
 2. **Xcode toolchain** — Run `xcode-select -p` and check if the output is `/Applications/Xcode.app/Contents/Developer`.
 
-3. **Xcode MCP server** — Run `claude mcp list` and check if an `xcode` entry exists.
+3. **Kernova project path** — Check if `~/Developer/GitHub/nicholas-lonsinger/Kernova` exists.
 
-4. **Kernova project path** — Check if `~/Developer/GitHub/nicholas-lonsinger/Kernova` exists.
-
-5. **Project local settings** — If the Kernova project path exists, read `{kernova}/.claude/settings.local.json` (if it exists) and check whether the expected keys are present:
+4. **Project local settings** — If the Kernova project path exists, read `{kernova}/.claude/settings.local.json` (if it exists) and check whether the expected keys are present:
    - `enabledPlugins["swift-lsp@claude-plugins-official"]` is `true`
    - `permissions.allow` contains `WebFetch(domain:api.github.com)` and `WebFetch(domain:github.com)`
    - `permissions.additionalDirectories` contains `/Volumes/My Shared Files/Kernova`
    - `sandbox.enabled` is `true`, `autoAllowBashIfSandboxed` is `true`, `enableWeakerNetworkIsolation` is `true`
    - `sandbox.filesystem.allowWrite` contains `/Volumes/My Shared Files/Kernova/`
 
-6. **CLAUDE.local.md** — If the Kernova project path exists, check whether `{kernova}/CLAUDE.local.md` exists and if its content matches the template at `${CLAUDE_PLUGIN_ROOT}/scripts/templates/kernova-CLAUDE.local.md`.
+5. **CLAUDE.local.md** — If the Kernova project path exists, check whether `{kernova}/CLAUDE.local.md` exists and if its content matches the template at `${CLAUDE_PLUGIN_ROOT}/scripts/templates/kernova-CLAUDE.local.md`.
 
 ### Present the Summary
 
@@ -60,9 +58,8 @@ After collecting all results, present a single formatted summary using this stru
 |----|--------------------------|-----------------|
 | 1  | User-level settings      | ✅ Configured / ⚠️ Partial (details) / ❌ Not configured |
 | 2  | Xcode toolchain          | ✅ Correct / ❌ Wrong path: ... |
-| 3  | Xcode MCP server         | ✅ Installed / ❌ Not found |
-| 4  | Project local settings   | ✅ Configured / ⚠️ Partial (details) / ❌ Not configured / ⚠️ Project not found |
-| 5  | CLAUDE.local.md          | ✅ Up to date / ⚠️ Differs from template / ❌ Missing / ⚠️ Project not found |
+| 3  | Project local settings   | ✅ Configured / ⚠️ Partial (details) / ❌ Not configured / ⚠️ Project not found |
+| 4  | CLAUDE.local.md          | ✅ Up to date / ⚠️ Differs from template / ❌ Missing / ⚠️ Project not found |
 ```
 
 For items marked ⚠️ Partial, include a short parenthetical about what's missing (e.g., "missing effortLevel, marketplace").
@@ -70,7 +67,7 @@ For items marked ⚠️ Partial, include a short parenthetical about what's miss
 Then ask the user:
 
 > **Which sections would you like to configure?**
-> - Enter section numbers (e.g., `1, 3, 5`) to run specific sections
+> - Enter section numbers (e.g., `1, 3, 4`) to run specific sections
 > - Enter `all` to run everything that isn't already ✅
 > - Enter `force all` to re-run everything regardless of status
 >
@@ -132,24 +129,13 @@ Run `xcode-select -p` and check the output:
   ```
   Ask the user to run this command (it requires sudo). Do not proceed to the next section until `xcode-select -p` returns the correct path.
 
-### Section 3: Xcode MCP Server
+### Section 3: Project Local Settings
 
-Run `claude mcp list` and check if an `xcode` entry already exists.
-
-- **If it exists** — report as already installed, move on.
-- **If it does not exist** — run:
-  ```bash
-  claude mcp add --transport stdio xcode -- xcrun mcpbridge
-  ```
-  Then run `claude mcp list` again to verify it was added.
-
-### Section 4: Project Local Settings
-
-#### Step 4a: Locate the project
+#### Step 3a: Locate the project
 
 Check if the Kernova project path exists (default: `~/Developer/GitHub/nicholas-lonsinger/Kernova`). If not, ask the user for the path. Do not proceed until a valid path is confirmed.
 
-#### Step 4b: settings.local.json
+#### Step 3b: settings.local.json
 
 Read `{kernova}/.claude/settings.local.json` if it exists. Merge the following JSON into it (create the file if absent):
 
@@ -189,7 +175,7 @@ Read `{kernova}/.claude/settings.local.json` if it exists. Merge the following J
 
 Present the proposed merged result and confirm before writing.
 
-### Section 5: CLAUDE.local.md
+### Section 4: CLAUDE.local.md
 
 Check if `{kernova}/CLAUDE.local.md` already exists.
 
@@ -210,7 +196,6 @@ After all selected sections are complete, present a compact summary:
 |--------------------------|---------------------|
 | User-level settings      | ✅ Updated / ✅ Already configured / ⏭️ Skipped |
 | Xcode toolchain          | ✅ Correct / ⏭️ Skipped |
-| Xcode MCP server         | ✅ Installed / ✅ Already installed / ⏭️ Skipped |
 | Project local settings   | ✅ Updated / ✅ Already configured / ⏭️ Skipped |
 | CLAUDE.local.md          | ✅ Created / ✅ Up to date / ⏭️ Skipped |
 ```
