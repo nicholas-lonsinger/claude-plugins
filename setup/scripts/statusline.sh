@@ -4,7 +4,7 @@
 input=$(cat)
 
 # --- Model & Style ---
-model_name=$(echo "$input" | jq -r '.model.display_name // "ERROR"')
+model_name=$(echo "$input" | jq -r '.model.display_name // "ERROR"' | sed 's/ ([^)]*context)$//')
 output_style=$(echo "$input" | jq -r '.output_style.name // "ERROR"')
 
 # --- Git Info (cached) ---
@@ -85,10 +85,13 @@ if [ "$used_pct" = "null" ] || [ "$window_size" = "null" ]; then
 elif ! [[ "$used_pct" =~ ^[0-9]+$ ]] || ! [[ "$window_size" =~ ^[0-9]+$ ]]; then
     context_info="ERROR"
 else
-    input_k=$(awk "BEGIN {printf \"%.0f\", $input_tokens/1000}")
-    output_k=$(awk "BEGIN {printf \"%.0f\", $output_tokens/1000}")
-    window_k=$(awk "BEGIN {printf \"%.0f\", $window_size/1000}")
-    context_info=$(printf "%.0f%% ↑%sK ↓%sK / %sK" "$used_pct" "$input_k" "$output_k" "$window_k")
+    fmt_tokens() {
+        awk "BEGIN {k=$1/1000; if (k>=1000) printf \"%.0fM\", k/1000; else printf \"%.0fK\", k}"
+    }
+    input_fmt=$(fmt_tokens "$input_tokens")
+    output_fmt=$(fmt_tokens "$output_tokens")
+    window_fmt=$(fmt_tokens "$window_size")
+    context_info=$(printf "%.0f%% ↑%s ↓%s / %s" "$used_pct" "$input_fmt" "$output_fmt" "$window_fmt")
 fi
 
 # --- Rate Limits ---
