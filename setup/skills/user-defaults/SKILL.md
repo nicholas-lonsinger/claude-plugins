@@ -1,6 +1,6 @@
 ---
 name: user-defaults
-description: Configure ~/.claude/settings.json with default user settings — model, plugins, marketplace, and preferences
+description: Configure ~/.claude/settings.json with default user settings — plugins, marketplace, and preferences
 allowed-tools: Read, Edit, Write, Bash, Glob, Grep, AskUserQuestion
 ---
 
@@ -14,7 +14,6 @@ The following is the full default template:
 
 ```json
 {
-  "model": "OpusPlan",
   "enabledPlugins": {
     "setup@nicholas-lonsinger-plugins": true,
     "pr-review-toolkit@claude-plugins-official": true
@@ -46,7 +45,7 @@ Merge the template into the existing settings using these rules:
 
 - **`enabledPlugins`**: add new entries without removing existing ones
 - **`extraKnownMarketplaces`**: merge the new entry; if `nicholas-lonsinger-plugins` already exists, update it to match the template
-- **All other keys** (`model`, `effortLevel`, `skipDangerousModePermissionPrompt`, `outputStyle`): set to the template value
+- **All other keys** (`effortLevel`, `skipDangerousModePermissionPrompt`, `outputStyle`): set to the template value
 
 Never remove existing keys or entries that are not part of the template.
 
@@ -61,7 +60,6 @@ Write the merged result to `~/.claude/settings.json`. Then read the file back an
 ### Step 5: Report
 
 Tell the user what was configured:
-- Model set to `OpusPlan`
 - Plugins enabled: setup, pr-review-toolkit
 - Nicholas Lonsinger marketplace registered with auto-update
 - Effort level set to `high`, dangerous mode prompt skipped, output style set to `Explanatory`
