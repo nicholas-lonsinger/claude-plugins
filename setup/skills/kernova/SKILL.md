@@ -30,7 +30,7 @@ Before presenting any options, silently run ALL of the following checks in paral
 1. **User settings** — Read `~/.claude/settings.json` (if it exists). Check whether each of these keys/values is already present:
    - `enabledPlugins["setup@nicholas-lonsinger-plugins"]` is `true`
    - `enabledPlugins["pr-review-toolkit@claude-plugins-official"]` is `true`
-   - `extraKnownMarketplaces["nicholas-lonsinger-plugins"]` exists with the correct source
+   - `extraKnownMarketplaces["nicholas-lonsinger-plugins"]` exists with the correct source and `autoUpdate` is `true`
    - `effortLevel` is `"high"`
    - `skipDangerousModePermissionPrompt` is `true`
 
@@ -98,7 +98,8 @@ Read `~/.claude/settings.json` (create with `{}` if it doesn't exist). Merge the
     "source": {
       "source": "github",
       "repo": "nicholas-lonsinger/claude-plugins"
-    }
+    },
+    "autoUpdate": true
   }
 }
 ```
