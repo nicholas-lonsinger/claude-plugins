@@ -11,7 +11,7 @@
       "name": "setup",
       "description": "Environment setup utilities for Claude Code — status line, hooks, and configuration",
       "source": "./setup",
-      "version": "1.4.0"
+      "version": "1.4.1"
     }
   ]
 }

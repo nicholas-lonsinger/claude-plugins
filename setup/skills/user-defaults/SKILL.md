@@ -28,8 +28,7 @@ The following settings are always applied:
     }
   },
   "effortLevel": "high",
-  "skipDangerousModePermissionPrompt": true,
-  "outputStyle": "Explanatory"
+  "skipDangerousModePermissionPrompt": true
 }
 ```
 
@@ -74,7 +73,7 @@ Merge the core template (and the sandbox template if accepted) into the existing
 - **`enabledPlugins`**: add new entries without removing existing ones
 - **`extraKnownMarketplaces`**: merge the new entry; if `nicholas-lonsinger-plugins` already exists, update it to match the template
 - **`sandbox`** (if accepted): set the entire `sandbox` object to the template value
-- **All other keys** (`effortLevel`, `skipDangerousModePermissionPrompt`, `outputStyle`): set to the template value
+- **All other keys** (`effortLevel`, `skipDangerousModePermissionPrompt`): set to the template value
 
 Never remove existing keys or entries that are not part of the template.
 
@@ -91,5 +90,5 @@ Write the merged result to `~/.claude/settings.json`. Then read the file back an
 Tell the user what was configured:
 - Plugins enabled: setup, pr-review-toolkit
 - Nicholas Lonsinger marketplace registered with auto-update
-- Effort level set to `high`, dangerous mode prompt skipped, output style set to `Explanatory`
+- Effort level set to `high`, dangerous mode prompt skipped
 - Sandbox: enabled (with details) **or** skipped per user preference
