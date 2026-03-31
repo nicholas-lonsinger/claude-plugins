@@ -16,8 +16,6 @@ The following is the full default template:
 {
   "model": "OpusPlan",
   "enabledPlugins": {
-    "clangd-lsp@claude-plugins-official": true,
-    "swift-lsp@claude-plugins-official": true,
     "setup@nicholas-lonsinger-plugins": true,
     "pr-review-toolkit@claude-plugins-official": true
   },
@@ -64,6 +62,6 @@ Write the merged result to `~/.claude/settings.json`. Then read the file back an
 
 Tell the user what was configured:
 - Model set to `OpusPlan`
-- Plugins enabled: clangd-lsp, swift-lsp, setup, pr-review-toolkit
+- Plugins enabled: setup, pr-review-toolkit
 - Nicholas Lonsinger marketplace registered with auto-update
 - Effort level set to `high`, dangerous mode prompt skipped, output style set to `Explanatory`
