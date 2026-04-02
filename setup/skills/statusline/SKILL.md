@@ -8,7 +8,7 @@ allowed-tools: Read, Edit, Write, Bash, Glob, Grep
 
 You are configuring the user's Claude Code status line. This skill installs a custom status line that displays:
 
-- **Model & output style** (e.g., `Opus 4.6 | Explanatory`)
+- **Model** (e.g., `Opus 4.6`)
 - **Git info** with branch, worktree detection, modified/untracked flags, and ahead/behind tracking
 - **Context window** usage percentage with input/output token counts
 - **Rate limits** for 5-hour and 7-day windows with pace-based color coding and countdown timers
@@ -65,7 +65,7 @@ After configuration, read back `~/.claude/settings.json` and confirm the `status
 
 Tell the user:
 - The status line is now configured and active
-- The status line shows: model, output style, git branch with worktree/dirty/ahead-behind info, context window usage, and rate limits with pace-based coloring
+- The status line shows: model, git branch with worktree/dirty/ahead-behind info, context window usage, and rate limits with pace-based coloring
 
 ## Requirements
 

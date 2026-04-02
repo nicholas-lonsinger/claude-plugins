@@ -3,9 +3,8 @@
 # Read JSON session data from stdin
 input=$(cat)
 
-# --- Model & Style ---
+# --- Model ---
 model_name=$(echo "$input" | jq -r '.model.display_name // "ERROR"' | sed 's/ ([^)]*context)$//')
-output_style=$(echo "$input" | jq -r '.output_style.name // "ERROR"')
 
 # --- Git Info (cached) ---
 cwd=$(echo "$input" | jq -r '.workspace.current_dir // ""')
@@ -159,7 +158,7 @@ fi
 
 # --- Output ---
 if [ -n "$rate_section" ]; then
-    printf "🤖 %s | 💬 %s | %s %s | 💭 %s | %s" "$model_name" "$output_style" "$git_icon" "$git_section" "$context_info" "$rate_section"
+    printf "🤖 %s | %s %s | 💭 %s | %s" "$model_name" "$git_icon" "$git_section" "$context_info" "$rate_section"
 else
-    printf "🤖 %s | 💬 %s | %s %s | 💭 %s" "$model_name" "$output_style" "$git_icon" "$git_section" "$context_info"
+    printf "🤖 %s | %s %s | 💭 %s" "$model_name" "$git_icon" "$git_section" "$context_info"
 fi
