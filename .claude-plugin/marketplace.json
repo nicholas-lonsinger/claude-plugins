@@ -12,6 +12,12 @@
       "description": "Environment setup utilities for Claude Code — status line, hooks, and configuration",
       "source": "./setup",
       "version": "1.4.2"
+    },
+    {
+      "name": "issues",
+      "description": "GitHub issue management utilities for Claude Code — create well-researched issues with codebase context",
+      "source": "./issues",
+      "version": "1.0.0"
     }
   ]
 }

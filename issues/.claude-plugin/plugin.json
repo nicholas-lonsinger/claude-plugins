@@ -1,0 +1,13 @@
+{
+  "name": "issues",
+  "version": "1.0.0",
+  "description": "GitHub issue management utilities for Claude Code — create well-researched issues with codebase context",
+  "author": {
+    "name": "Nicholas Lonsinger",
+    "url": "https://github.com/nicholas-lonsinger"
+  },
+  "repository": "https://github.com/nicholas-lonsinger/claude-plugins",
+  "license": "MIT",
+  "keywords": ["issues", "github", "issue-management"],
+  "skills": "./skills/"
+}
