@@ -1,6 +1,6 @@
 {
   "name": "setup",
-  "version": "1.4.2",
+  "version": "1.4.3",
   "description": "Environment setup utilities for Claude Code — status line, hooks, and configuration",
   "author": {
     "name": "Nicholas Lonsinger",

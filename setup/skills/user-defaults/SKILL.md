@@ -16,6 +16,7 @@ The following settings are always applied:
 {
   "enabledPlugins": {
     "setup@nicholas-lonsinger-plugins": true,
+    "issues@nicholas-lonsinger-plugins": true,
     "pr-review-toolkit@claude-plugins-official": true
   },
   "extraKnownMarketplaces": {
@@ -88,7 +89,7 @@ Write the merged result to `~/.claude/settings.json`. Then read the file back an
 ### Step 6: Report
 
 Tell the user what was configured:
-- Plugins enabled: setup, pr-review-toolkit
+- Plugins enabled: setup, issues, pr-review-toolkit
 - Nicholas Lonsinger marketplace registered with auto-update
 - Effort level set to `high`, dangerous mode prompt skipped
 - Sandbox: enabled (with details) **or** skipped per user preference
