@@ -1,6 +1,7 @@
 ---
 name: add
 description: Create a well-researched GitHub issue with codebase context, dependency analysis, and structured formatting
+disable-model-invocation: true
 allowed-tools: Read, Edit, Write, Bash, Glob, Grep, Agent, AskUserQuestion, WebFetch
 ---
 

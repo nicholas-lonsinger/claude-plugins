@@ -1,6 +1,6 @@
 {
   "name": "issues",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "GitHub issue management utilities for Claude Code — create well-researched issues with codebase context",
   "author": {
     "name": "Nicholas Lonsinger",
