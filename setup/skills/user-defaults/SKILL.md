@@ -1,12 +1,12 @@
 ---
 name: user-defaults
-description: Configure ~/.claude/settings.json with default user settings — plugins, marketplace, and preferences
+description: Configure ~/.claude/settings.json and ~/.claude/CLAUDE.md with default user settings — plugins, marketplace, preferences, and coding guidelines
 allowed-tools: Read, Edit, Write, Bash, Glob, Grep, AskUserQuestion
 ---
 
 # User Defaults Setup
 
-You are configuring the user's `~/.claude/settings.json` with a standard set of defaults. This skill merges a known-good configuration template into the user's existing settings without removing anything they already have.
+You are configuring the user's `~/.claude/settings.json` and `~/.claude/CLAUDE.md` with a standard set of defaults. This skill merges known-good configuration and coding guidelines into the user's existing files without removing anything they already have.
 
 ## Core Template
 
@@ -49,6 +49,39 @@ The following sandbox settings are only applied if the user opts in:
 }
 ```
 
+## User CLAUDE.md Template
+
+The following content is merged into `~/.claude/CLAUDE.md`:
+
+```markdown
+## Fix the foundation when you're standing on it
+
+When a task puts you in direct contact with broken, duplicated,
+or divergent code, fix the underlying issue rather than routing
+around it. The trigger is contact, not proximity — don't go
+hunting for things to refactor elsewhere, but don't build on top
+of something you're about to make worse.
+
+Stop and restructure when you hit:
+
+- **Parallel logic paths.** Consolidate to one source of truth.
+  Don't fix a bug on both sides and leave the duplication.
+- **Pattern divergence.** Bring the code in line with the
+  established pattern in the codebase. Don't add a third variant.
+- **Accumulating weight.** If the file or function you're
+  extending has crossed the threshold for splitting, do the split
+  as part of this change. A small diff on top of an unwieldy
+  structure is a false economy.
+- **Extending anti-patterns.** Don't build on swallowed errors,
+  missing types, untested critical paths, or mutable shared
+  state. Fix in place or surface it before continuing.
+
+Surface substantial expansions before executing — one line is
+enough ("consolidating the two auth helpers before adding the
+endpoint, ~40 lines"). Small consistency fixes don't need a
+heads-up.
+```
+
 ## Steps
 
 ### Step 1: Read current settings
@@ -82,14 +115,32 @@ Never remove existing keys or entries that are not part of the template.
 
 Show the user the proposed merged `settings.json` and ask for confirmation before writing.
 
-### Step 5: Write and verify
+### Step 5: Write and verify settings
 
 Write the merged result to `~/.claude/settings.json`. Then read the file back and confirm all template keys are present and correct.
 
-### Step 6: Report
+### Step 6: Read current CLAUDE.md
+
+Read `~/.claude/CLAUDE.md`. If the file does not exist, treat the current content as empty.
+
+### Step 7: Merge CLAUDE.md
+
+Check whether the section `## Fix the foundation when you're standing on it` already exists in the file.
+
+- **If the section already exists**: skip — do not duplicate or overwrite it.
+- **If the section does not exist**: append the User CLAUDE.md Template content to the end of the file. If the file already has content, add a blank line before the new section.
+
+Show the user the proposed `~/.claude/CLAUDE.md` and ask for confirmation before writing.
+
+### Step 8: Write and verify CLAUDE.md
+
+Write the merged result to `~/.claude/CLAUDE.md`. Then read the file back and confirm the section is present.
+
+### Step 9: Report
 
 Tell the user what was configured:
 - Plugins enabled: setup, issues, pr-review-toolkit
 - Nicholas Lonsinger marketplace registered with auto-update
 - Effort level set to `high`, dangerous mode prompt skipped
 - Sandbox: enabled (with details) **or** skipped per user preference
+- User CLAUDE.md: "Fix the foundation" coding guideline added **or** already present
