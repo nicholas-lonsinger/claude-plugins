@@ -73,7 +73,7 @@ Based on the agent's return status:
 Run the full PR review toolkit on the created PR:
 
 ```
-/pr-review-toolkit:review-pr
+/review
 ```
 
 Collect the review findings (critical issues, important issues, suggestions).

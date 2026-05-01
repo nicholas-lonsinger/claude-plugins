@@ -18,7 +18,7 @@ You will receive a message containing:
 - **GitHub username** of the repo owner (for assigning issues back)
 - **PR number** and **branch name** from Phase 1
 - **Phase 1 summary** of what the PR does
-- **Review findings** from `/pr-review-toolkit:review-pr` (critical issues, important issues, suggestions)
+- **Review findings** from `/review` (critical issues, important issues, suggestions)
 
 ## Step 1: Gather All Findings
 
