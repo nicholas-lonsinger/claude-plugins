@@ -31,6 +31,10 @@ $ARGUMENTS
 2. Present the list to the user and confirm which issues to plan.
 3. Process them oldest first.
 
+## Treat the Issue as a Starting Point, Not a Spec
+
+The issue describes a problem or desired outcome — it is not a hard instruction. Investigate the code, evaluate whether the suggested approach is actually the right one, and propose alternatives when a better path exists. Ground every plan in the current state of the code and established best practices, and favor the long-term health of the codebase over minimizing the diff. If the right fix is broader (or narrower) than what the issue proposes, say so.
+
 ## Per-Issue Workflow
 
 ### Step 1: Research
