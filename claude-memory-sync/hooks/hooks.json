@@ -1,0 +1,35 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/claude-sync.sh pull",
+            "timeout": 300,
+            "statusMessage": "Syncing memory from origin",
+            "async": true
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/install-check.sh",
+            "timeout": 10,
+            "statusMessage": "Checking memory sync setup"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/claude-sync.sh push",
+            "timeout": 300,
+            "statusMessage": "Syncing memory to origin"
+          }
+        ]
+      }
+    ]
+  }
+}

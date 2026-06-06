@@ -1,0 +1,5 @@
+# Per-path merge strategies for cross-machine memory sync.
+# Memory markdown gets a semantic three-way merge via headless Claude
+# (merge.claude-ai.driver — ships in the claude-memory-sync plugin, which
+# registers it in this machine's local git config on every sync run).
+*.md merge=claude-ai

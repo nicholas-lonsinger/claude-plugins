@@ -12,24 +12,24 @@ When committing changes to any plugin (new skills, modified skills, config chang
 
 Both files must have matching versions:
 - `.claude-plugin/marketplace.json` (marketplace index)
-- `setup/.claude-plugin/plugin.json` (plugin manifest)
+- `<plugin>/.claude-plugin/plugin.json` (plugin manifest)
 
 ## Repo Structure
 
 ```
 .claude-plugin/marketplace.json   # Marketplace index — lists all plugins
-setup/                            # "setup" plugin
-  .claude-plugin/plugin.json      # Plugin manifest (name, version, skills path)
-  skills/                         # Skills directory
-    statusline/SKILL.md           # Status line setup skill
-    kernova/SKILL.md              # Kernova machine setup skill
-  scripts/                        # Supporting scripts used by skills
+<plugin>/                         # One directory per plugin (setup, issues, claude-memory-sync)
+  .claude-plugin/plugin.json      # Plugin manifest (name, version, component paths)
+  skills/<skill-name>/SKILL.md    # Skills (invoked as /<plugin>:<skill-name>)
+  scripts/                        # Supporting scripts used by skills and hooks
+  hooks/hooks.json                # Session hooks (optional; auto-active when plugin enabled)
+  templates/                      # Files skills copy out to stable paths (optional)
 ```
 
 ## Adding a New Skill
 
-1. Create `setup/skills/<skill-name>/SKILL.md`
-2. Add any supporting scripts/templates under `setup/scripts/`
-3. Add the skill keyword to `setup/.claude-plugin/plugin.json` keywords array
-4. Bump the version in both `.claude-plugin/marketplace.json` and `setup/.claude-plugin/plugin.json` (minor bump, must match)
+1. Create `<plugin>/skills/<skill-name>/SKILL.md`
+2. Add any supporting scripts/templates under `<plugin>/scripts/`
+3. Add the skill keyword to `<plugin>/.claude-plugin/plugin.json` keywords array
+4. Bump the version in both `.claude-plugin/marketplace.json` and `<plugin>/.claude-plugin/plugin.json` (minor bump, must match)
 5. Commit and push
