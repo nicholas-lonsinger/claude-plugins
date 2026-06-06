@@ -27,7 +27,7 @@ Environment setup utilities for Claude Code.
 | Skill | Command | Description |
 |-------|---------|-------------|
 | statusline | `/setup:statusline` | Install a custom status line with git info, context window usage, and rate limit monitoring |
-| kernova | `/setup:kernova` | Configure Claude Code for Kernova development — user settings, project local settings, Xcode MCP, and swift-lsp |
+| user-defaults | `/setup:user-defaults` | Configure `~/.claude/settings.json` and `~/.claude/CLAUDE.md` with default user settings — plugins, marketplace, preferences, and coding guidelines |
 
 #### Status Line Features
 
@@ -37,6 +37,28 @@ Environment setup utilities for Claude Code.
 - Rate limit monitoring for 5-hour and 7-day windows with pace-based color coding
 
 **Requirements:** `jq`, `git`, macOS or Linux
+
+### claude-memory-sync
+
+Cross-machine sync for Claude Code's per-project memory files
+(`~/.claude/projects/<slug>/memory/`). The `~/.claude` directory becomes the
+working copy of a **private** GitHub state repo with a whitelist
+`.gitignore` (memory files only — transcripts, settings, and caches stay
+local). Session hooks keep it synced automatically: pull on session start,
+push on session end, with concurrent edits to memory markdown reconciled by
+an AI semantic merge driver (union-of-knowledge, three-way). One user-level
+install covers every project on the machine.
+
+**Skills:**
+
+| Skill | Command | Description |
+|-------|---------|-------------|
+| install | `/claude-memory-sync:install` | Set up this machine: attach `~/.claude` to a private state repo (creating it if needed) and verify the sync round-trip |
+
+Until install runs, the bundled hooks no-op silently and a session-start
+notice offers the install skill.
+
+**Requirements:** `git`, `gh` (authenticated), macOS or Linux
 
 ## Adding Plugins
 
