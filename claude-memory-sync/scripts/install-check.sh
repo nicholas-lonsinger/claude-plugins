@@ -23,7 +23,7 @@ MARKER="$DATA/state-repo"
 [ -n "${CLAUDE_SYNC_ACTIVE:-}" ] && exit 0
 
 if [ ! -f "$MARKER" ]; then
-  echo "claude-memory-sync: memory sync is not set up on this machine, so the sync hooks are idle. Offer to run /claude-memory-sync:install when convenient; don't act unprompted."
+  echo "claude-memory-sync: the plugin is installed and its sync hooks are active, but setup is not complete on this machine — completing it requires running /claude-memory-sync:install (interactive; it asks which private GitHub repo to sync memory to). At the start of the session, briefly explain this and ask the user whether to run it now. If they decline, drop the subject for the rest of the session."
   exit 0
 fi
 
