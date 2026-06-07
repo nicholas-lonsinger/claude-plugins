@@ -1,6 +1,6 @@
 {
   "name": "claude-memory-sync",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "Cross-machine sync for Claude Code's per-project memory files — git-backed private state repo with AI-assisted semantic merge",
   "author": {
     "name": "Nicholas Lonsinger",
@@ -8,6 +8,13 @@
   },
   "repository": "https://github.com/nicholas-lonsinger/claude-plugins",
   "license": "MIT",
-  "keywords": ["memory", "sync", "backup", "git", "merge"],
+  "keywords": [
+    "memory",
+    "sync",
+    "backup",
+    "git",
+    "merge",
+    "uninstall"
+  ],
   "skills": "./skills/"
 }
