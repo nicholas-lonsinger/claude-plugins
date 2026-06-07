@@ -65,7 +65,7 @@ stays clean — the old whitelist plumbing files (`~/.claude/.gitignore`,
 ## Step 2: Choose the state repo
 
 Ask the user (AskUserQuestion) for the GitHub repo to sync memory to.
-Suggest `<gh-username>/claude-memory` as the default (get the username from
+Suggest `<gh-username>/claude-memory-sync` as the default (get the username from
 `gh api user -q .login`). Accept a bare name as shorthand for
 `<gh-username>/<name>`. Tell the user plainly: the repo holds private
 memory contents and will be created **private** / must already be private.
