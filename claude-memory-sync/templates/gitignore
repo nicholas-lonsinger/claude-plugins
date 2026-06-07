@@ -1,22 +1,3 @@
-# Whitelist mode: ignore everything, then re-include only what we sync.
+# claude-memory-sync store repo — everything here is synced except OS cruft.
 # Managed by the claude-memory-sync plugin (/claude-memory-sync:install).
-*
-
-# Repo plumbing (root-level by necessity: git reads these here, README.md
-# is the repo front page).
-!/.gitignore
-!/.gitattributes
-!/README.md
-
-# Persistent memory: projects/<slug>/memory/ only — transcripts and any
-# other session state under projects/ stay local. One rung per path level
-# on purpose: git won't descend into an ignored directory, so each ancestor
-# must be un-ignored before the next level's rule can match. New projects
-# and new memory files sync with no edits here.
-!/projects/
-!/projects/*/
-!/projects/*/memory/
-!/projects/*/memory/**
-
-# Never sync OS cruft, even inside whitelisted dirs
 .DS_Store
