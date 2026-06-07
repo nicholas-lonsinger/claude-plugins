@@ -17,10 +17,14 @@
 # Always exits 0 — a missing setup must never block a session.
 set -u
 
-DIR="$HOME/.claude-memory-sync"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 DATA="${CLAUDE_PLUGIN_DATA:-$HOME/.claude/plugins/data/claude-memory-sync-nicholas-lonsinger-plugins}"
 MARKER="$DATA/state-repo"
+
+# Store location chosen at install time (see claude-sync.sh); absent on
+# pre-0.3.0 installs → the historical default.
+DIR="$(cat "$DATA/state-dir" 2>/dev/null)"
+[ -n "$DIR" ] || DIR="$HOME/.claude-memory-sync"
 
 # Headless merge session (claude -p inside the merge driver) — stay silent.
 [ -n "${CLAUDE_SYNC_ACTIVE:-}" ] && exit 0
@@ -36,7 +40,7 @@ fi
 
 SLUG="$(cat "$MARKER" 2>/dev/null)"
 if [ ! -d "$DIR/.git" ]; then
-  echo "claude-memory-sync: this machine is configured to sync memory to '$SLUG', but the store repo at ~/.claude-memory-sync is missing or not a git repo — sync is broken. Offer to re-run /claude-memory-sync:install to repair it."
+  echo "claude-memory-sync: this machine is configured to sync memory to '$SLUG', but the store repo at $DIR is missing or not a git repo — sync is broken. Offer to re-run /claude-memory-sync:install to repair it."
   exit 0
 fi
 
@@ -44,7 +48,7 @@ origin="$(git -C "$DIR" remote get-url origin 2>/dev/null || true)"
 case "$origin" in
   *"$SLUG"*) ;; # installed and consistent — fall through to the link check
   *)
-    echo "claude-memory-sync: this machine is configured to sync memory to '$SLUG', but ~/.claude-memory-sync's origin is '${origin:-none}' — sync is idle. Offer to re-run /claude-memory-sync:install to repair it."
+    echo "claude-memory-sync: this machine is configured to sync memory to '$SLUG', but the store at $DIR has origin '${origin:-none}' — sync is idle. Offer to re-run /claude-memory-sync:install to repair it."
     exit 0
     ;;
 esac

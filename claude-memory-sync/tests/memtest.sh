@@ -202,6 +202,31 @@ rm -f "$DATA/uninstalled"; printf '%s\n' "testowner/teststate" > "$DATA/state-re
 OUT="$(run_check "$PROJ3")"
 assert "no output for healthy linked project" test -z "$OUT"
 
+# ---------- 14: custom store path via state-dir marker ----------
+# Proves both hooks honor a non-default store location: the store lives at
+# an arbitrary path named by $DATA/state-dir, and the default
+# ~/.claude-memory-sync is never created or consulted.
+echo "== 14: custom store path =="
+SCRATCH3="$(mktemp -d /private/tmp/memsync-test3.XXXXXX)"
+cp "$SCRATCH/.gitconfig" "$SCRATCH3/.gitconfig"
+DATA3="$SCRATCH3/.claude/plugins/data/claude-memory-sync-nicholas-lonsinger-plugins"
+CUSTOM_STORE="$SCRATCH3/xdg/memstore"   # deliberately not ~/.claude-memory-sync
+mkdir -p "$SCRATCH3/.claude/projects" "$DATA3" "$(dirname "$CUSTOM_STORE")"
+printf '%s\n' "testowner/teststate" > "$DATA3/state-repo"
+printf '%s\n' "$CUSTOM_STORE" > "$DATA3/state-dir"
+env HOME="$SCRATCH3" git clone -q "$REMOTE" "$CUSTOM_STORE"
+M3PROJ="$SCRATCH3/code/kernova-sim-custom"
+mkdir -p "$M3PROJ"
+git -C "$M3PROJ" init -q -b main
+git -C "$M3PROJ" remote add origin "https://github.com/testowner/kernova-sim.git"
+env HOME="$SCRATCH3" CLAUDE_PROJECT_DIR="$M3PROJ" bash "$SYNC" pull </dev/null
+M3SLUG="$(slug "$M3PROJ")"
+M3LINK="$SCRATCH3/.claude/projects/$M3SLUG/memory"
+assert "linked into the custom store" test -L "$M3LINK"
+assert "symlink target is under custom store" sh -c "case \"\$(cd '$M3LINK' && pwd -P)\" in '$CUSTOM_STORE'/*) exit 0;; *) exit 1;; esac"
+assert "default store path never created" test ! -e "$SCRATCH3/.claude-memory-sync"
+assert "install-check quiet for custom-store project" test -z "$(env HOME="$SCRATCH3" CLAUDE_PROJECT_DIR="$M3PROJ" bash "$CHECK" </dev/null)"
+
 # ---------- summary ----------
 echo "=================================="
 echo "PASS=$PASS FAIL=$FAIL  (scratch: $SCRATCH)"

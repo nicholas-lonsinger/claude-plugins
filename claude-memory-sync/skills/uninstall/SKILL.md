@@ -1,6 +1,6 @@
 ---
 name: uninstall
-description: Disable memory sync on this machine and restore the stock folder layout — copy memory out of the store back to real per-project directories, then remove ~/.claude-memory-sync
+description: Disable memory sync on this machine and restore the stock folder layout — copy memory out of the store back to real per-project directories, then remove the local store repo
 allowed-tools: Read, Edit, Write, Bash, Glob, Grep, AskUserQuestion
 ---
 
@@ -8,10 +8,14 @@ allowed-tools: Read, Edit, Write, Bash, Glob, Grep, AskUserQuestion
 
 You are disabling memory sync on this machine and putting the folder
 structure back the way stock Claude Code expects it: every
-`~/.claude/projects/<slug>/memory` that is currently a symlink into
-`~/.claude-memory-sync/memory/<name>/` becomes a real directory again with
-the same contents. **Never delete memory content.** The GitHub repo is left
+`~/.claude/projects/<slug>/memory` that is currently a symlink into the
+store's `memory/<name>/` becomes a real directory again with the same
+contents. **Never delete memory content.** The GitHub repo is left
 untouched.
+
+The store lives at `<store-dir>` — read it from the `state-dir` marker in
+Step 1 (it defaults to `~/.claude-memory-sync`) and substitute it wherever
+`<store-dir>` appears below.
 
 Confirm with the user before doing anything — this stops syncing on this
 machine until they reinstall.
@@ -21,18 +25,20 @@ machine until they reinstall.
 ```bash
 DATA="${CLAUDE_PLUGIN_DATA:-$HOME/.claude/plugins/data/claude-memory-sync-nicholas-lonsinger-plugins}"
 cat "$DATA/state-repo" 2>/dev/null
-git -C ~/.claude-memory-sync remote get-url origin 2>/dev/null
+STORE="$(cat "$DATA/state-dir" 2>/dev/null)"   # the chosen <store-dir>,
+STORE="${STORE:-$HOME/.claude-memory-sync}"    #   default if the marker is absent
+git -C "$STORE" remote get-url origin 2>/dev/null
 ```
 
-If neither the marker nor `~/.claude-memory-sync` exists, report "not
+If neither the marker nor the store at `<store-dir>` exists, report "not
 installed" and stop.
 
 ## Step 2: Push pending changes
 
 ```bash
-git -C ~/.claude-memory-sync status --short
+git -C "$STORE" status --short
 "${CLAUDE_PLUGIN_ROOT}/scripts/claude-sync.sh" push
-git -C ~/.claude-memory-sync log --oneline origin/main..HEAD   # should be empty
+git -C "$STORE" log --oneline origin/main..HEAD   # should be empty
 ```
 
 If unpushed commits remain (offline, push rejected), warn the user: continuing
@@ -42,7 +48,7 @@ unless pushed later or the store dir is kept.
 ## Step 3: Restore real memory directories
 
 For each symlink under `~/.claude/projects/*/memory` that points into
-`~/.claude-memory-sync/memory/`:
+`<store-dir>/memory/`:
 
 ```bash
 target="$(cd ~/.claude/projects/<slug>/memory && pwd -P)"   # resolve store dir
@@ -57,7 +63,7 @@ counterpart before moving on. Leave non-symlink memory directories alone.
 ## Step 4: Disarm the hooks
 
 ```bash
-rm -f "$DATA/state-repo"
+rm -f "$DATA/state-repo" "$DATA/state-dir"
 touch "$DATA/uninstalled"
 ```
 
@@ -67,7 +73,7 @@ later `/claude-memory-sync:install` clears the sentinel.
 
 ## Step 5: Remove the store
 
-With the user's confirmation, delete `~/.claude-memory-sync` (prefer
+With the user's confirmation, delete `<store-dir>` (prefer
 `trash` over `rm -rf`). Everything in it was either pushed (Step 2) or
 copied back (Step 3). Mention that the GitHub repo still exists and holds
 the synced history — deleting it (if wanted) is a manual step:
