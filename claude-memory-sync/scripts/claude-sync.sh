@@ -23,7 +23,6 @@
 # link/fetch/commit/merge/push and never resolves content itself.
 set -u
 
-DIR="$HOME/.claude-memory-sync"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # Mutable state (log, lock, install marker) lives in the plugin's persistent
 # data dir, which survives version updates — unlike the cache dir this
@@ -34,6 +33,12 @@ mkdir -p "$DATA"
 LOG="$DATA/sync.log"
 LOCK="$DATA/sync.lock"
 MARKER="$DATA/state-repo"
+
+# Store location chosen at install time, persisted alongside the slug marker.
+# Absent (pre-0.3.0 installs) → the historical default. Holds an absolute,
+# tilde-expanded path; lib-link.sh keys its self-reference guard off it.
+DIR="$(cat "$DATA/state-dir" 2>/dev/null)"
+[ -n "$DIR" ] || DIR="$HOME/.claude-memory-sync"
 
 log() { printf '%s [%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$1" "$2" >>"$LOG"; }
 
