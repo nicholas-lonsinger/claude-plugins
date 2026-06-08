@@ -57,6 +57,17 @@ dir_has_md() {
   find "$1" -maxdepth 1 -type f -name '*.md' -print -quit 2>/dev/null | grep -q .
 }
 
+# dirs_identical <dir-a> <dir-b> → success when both dirs hold the same files
+# with byte-identical contents, ignoring store-internal bookkeeping (.origin)
+# and macOS cruft (.DS_Store). Lets the link state machine tell a genuinely
+# divergent CONFLICT apart from a redundant copy — e.g. an uninstall→reinstall
+# cycle that restored a local dir while the store still holds the same content.
+# -x (exclude by basename glob) is honored by both BSD and GNU diff.
+dirs_identical() {
+  [ -d "$1" ] && [ -d "$2" ] || return 1
+  diff -rq -x .origin -x .DS_Store "$1" "$2" >/dev/null 2>&1
+}
+
 # find_store_dir_by_origin <normalized-origin> → echoes the store dir whose
 # .origin matches, if any. .origin is the source of truth for identity, so a
 # hand-renamed store dir is still found (and healed to) rather than
@@ -137,8 +148,12 @@ resolve_identity() {
 #     ADOPT_INTO_EMPTY real local memory, store dir has no payload → same
 #     HEAL             dangling/wrong symlink, or empty real dir shadowing
 #                      an existing store dir → replace with correct link
-#     CONFLICT         both sides have payload, or identity is ambiguous —
-#                      never resolved automatically (install-check nudges)
+#     HEAL_REDUNDANT   real local memory byte-identical to an existing store
+#                      dir (e.g. an uninstall→reinstall cycle) → drop the
+#                      redundant copy and relink; loses no unique content
+#     CONFLICT         both sides have DISTINCT payload, or identity is
+#                      ambiguous — never resolved automatically (install-check
+#                      nudges)
 #     NOOP             nothing to do yet (no memory anywhere)
 classify_link_state() {
   LINK_STATE=NOOP
@@ -173,7 +188,11 @@ classify_link_state() {
       if [ ! -d "$LINK_TARGET" ]; then
         LINK_STATE=ADOPT
       elif dir_has_md "$LINK_TARGET"; then
-        LINK_STATE=CONFLICT
+        if dirs_identical "$LINK_SRC" "$LINK_TARGET"; then
+          LINK_STATE=HEAL_REDUNDANT # local is a redundant copy of the store
+        else
+          LINK_STATE=CONFLICT
+        fi
       else
         LINK_STATE=ADOPT_INTO_EMPTY
       fi
@@ -204,9 +223,11 @@ write_origin_breadcrumb() {
 }
 
 # apply_link_state — carry out the classified transition. Deliberately
-# non-destructive: mv -n only, rm only on symlinks and verified-empty dirs;
-# anything surprising is left in place for the next run (or the CONFLICT
-# nudge). Always returns 0 — sync must never fail a session over a link.
+# non-destructive: mv -n only, rm only on symlinks, verified-empty dirs, or
+# (HEAL_REDUNDANT) a local dir re-confirmed byte-identical to the version-
+# controlled store it links to, so nothing unique is ever dropped. Anything
+# surprising is left in place for the next run (or the CONFLICT nudge). Always
+# returns 0 — sync must never fail a session over a link.
 apply_link_state() {
   case "$LINK_STATE" in
     LINKED | NOOP | SKIP | CONFLICT) return 0 ;;
@@ -223,6 +244,15 @@ apply_link_state() {
         rmdir "$LINK_SRC" 2>/dev/null || return 0
       fi
       [ -d "$LINK_TARGET" ] && ln -s "$LINK_TARGET" "$LINK_SRC" 2>/dev/null
+      ;;
+    HEAL_REDUNDANT)
+      # Local is a payload-bearing dir that exactly duplicates the store
+      # (typical after an uninstall→reinstall cycle). Re-verify byte-identity
+      # immediately before removing anything — if the tree changed under us
+      # and they no longer match, bail and leave both sides for CONFLICT.
+      dirs_identical "$LINK_SRC" "$LINK_TARGET" || return 0
+      rm -rf "$LINK_SRC" 2>/dev/null
+      ln -s "$LINK_TARGET" "$LINK_SRC" 2>/dev/null
       ;;
     ADOPT | ADOPT_INTO_EMPTY)
       mkdir -p "$LINK_TARGET" 2>/dev/null || return 0

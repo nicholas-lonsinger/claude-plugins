@@ -227,6 +227,36 @@ assert "symlink target is under custom store" sh -c "case \"\$(cd '$M3LINK' && p
 assert "default store path never created" test ! -e "$SCRATCH3/.claude-memory-sync"
 assert "install-check quiet for custom-store project" test -z "$(env HOME="$SCRATCH3" CLAUDE_PROJECT_DIR="$M3PROJ" bash "$CHECK" </dev/null)"
 
+# ---------- 15: identical local copy auto-relinks (uninstall→reinstall) ----------
+# A uninstall (restores a real local dir from the store) followed by a
+# reinstall (re-clones the still-populated remote) leaves byte-identical
+# payload on both sides. That must NOT read as CONFLICT — the redundant copy
+# is dropped and the symlink restored automatically. Divergent payload (test
+# 8) still conflicts.
+echo "== 15: identical-copy auto-relink =="
+RPROJ="$SCRATCH/dev/reinstall-sim"
+mkdir -p "$RPROJ"
+git -C "$RPROJ" init -q -b main
+git -C "$RPROJ" remote add origin "https://github.com/testowner/reinstall-sim.git"
+RSLUG="$(slug "$RPROJ")"
+mkdir -p "$PROJECTS/$RSLUG/memory"
+printf '# Memory index\n- reinstall fact\n' > "$PROJECTS/$RSLUG/memory/MEMORY.md"
+printf 'detail body\n' > "$PROJECTS/$RSLUG/memory/detail.md"
+run_sync "$RPROJ" push                       # adopt → store dir + symlink
+RSDIR="$STORE/memory/github-testowner-reinstall-sim"
+assert "reinstall: adopted to store" test -L "$PROJECTS/$RSLUG/memory" -a -d "$RSDIR"
+# simulate uninstall restore: byte-identical real dir, .origin stripped
+RTGT="$(cd "$PROJECTS/$RSLUG/memory" && pwd -P)"
+rm "$PROJECTS/$RSLUG/memory"
+cp -a "$RTGT" "$PROJECTS/$RSLUG/memory"
+rm -f "$PROJECTS/$RSLUG/memory/.origin"
+assert "reinstall: restored real dir matches store" sh -c "test ! -L '$PROJECTS/$RSLUG/memory' && diff -r -x .origin '$RSDIR' '$PROJECTS/$RSLUG/memory'"
+assert "install-check quiet for identical copy" test -z "$(run_check "$RPROJ")"
+run_sync "$RPROJ" pull                        # should auto-relink, not conflict
+assert "identical local copy auto-relinked" test -L "$PROJECTS/$RSLUG/memory"
+assert "relink points back to store dir" test "$(cd "$PROJECTS/$RSLUG/memory" && pwd -P)" = "$(cd "$RSDIR" && pwd -P)"
+assert "store payload intact after relink" test -f "$RSDIR/MEMORY.md" -a -f "$RSDIR/detail.md"
+
 # ---------- summary ----------
 echo "=================================="
 echo "PASS=$PASS FAIL=$FAIL  (scratch: $SCRATCH)"
