@@ -17,12 +17,13 @@ The store lives at `<store-dir>` — read it from the `state-dir` marker in
 Step 1 (it defaults to `~/.claude-memory-sync`) and substitute it wherever
 `<store-dir>` appears below.
 
-Confirm with the user before doing anything — this stops syncing on this
-machine. As the final step (Step 6) you'll either **disable** the plugin
-(recommended — it stays installed but its hooks no longer run) or
-**uninstall** it outright. Either way, turning sync back on later means
-re-running `/claude-memory-sync:install` (after `claude plugin enable …`
-first, if it was disabled).
+Assess first (Step 1), then gather the user's two real decisions in **one**
+AskUserQuestion call (Step 2) before changing anything. Everything else —
+pushing pending changes, restoring the real memory folders, switching off the
+sync hook — happens automatically once they confirm, so keep it out of the
+decision itself. Turning sync back on later means re-running
+`/claude-memory-sync:install` (after `claude plugin enable …` first, if the
+plugin was disabled rather than uninstalled).
 
 ## Step 1: Assess
 
@@ -37,7 +38,31 @@ git -C "$STORE" remote get-url origin 2>/dev/null
 If neither the marker nor the store at `<store-dir>` exists, report "not
 installed" and stop.
 
-## Step 2: Push pending changes
+## Step 2: Confirm the plan
+
+Ask the user their two decisions in a **single AskUserQuestion call with two
+questions**. These are the only choices that matter; don't pad the options with
+every downstream consequence, or the decision feels overwhelming.
+
+1. **Local store** — Trash the local store (`<store-dir>`) or keep it?
+   - *Trash it (recommended)* — move it to Trash; memory is safe (restored
+     locally below and still on GitHub).
+   - *Keep it* — leave the directory on disk untouched.
+2. **Plugin** — Disable the plugin or uninstall it?
+   - *Disable (recommended)* — stays installed but inactive; re-enable anytime
+     with `claude plugin enable`.
+   - *Uninstall* — removed entirely; reinstall from the marketplace to return.
+
+Keep each option's description to one short line. In the message accompanying
+the questions, briefly remind the user that the rest of the teardown runs
+automatically — push any pending changes, restore the real memory folders,
+clear the install markers — and that they can pick **Other** on either question
+to type a custom plan (e.g. skip the push, abort entirely) instead of the
+listed options. Recommend **Trash it** and **Disable**.
+
+Carry both answers forward: Q1 drives Step 6, Q2 drives Step 7.
+
+## Step 3: Push pending changes
 
 ```bash
 git -C "$STORE" status --short
@@ -45,11 +70,13 @@ git -C "$STORE" status --short
 git -C "$STORE" log --oneline origin/main..HEAD   # should be empty
 ```
 
-If unpushed commits remain (offline, push rejected), warn the user: continuing
-is safe for local restoration, but those commits won't reach other machines
-unless pushed later or the store dir is kept.
+If unpushed commits remain (offline, push rejected), warn the user: local
+restoration is still safe, but those commits won't reach other machines unless
+pushed later or the store dir is kept. If the user chose **Trash it** in Step 2,
+flag that trashing the store would discard those unpushed commits and
+re-confirm before continuing.
 
-## Step 3: Restore real memory directories
+## Step 4: Restore real memory directories
 
 For each symlink under `~/.claude/projects/*/memory` that points into
 `<store-dir>/memory/`:
@@ -64,7 +91,7 @@ rm -f ~/.claude/projects/<slug>/memory/.origin               # breadcrumb is sto
 Verify each restored directory holds the same `*.md` files as its store
 counterpart before moving on. Leave non-symlink memory directories alone.
 
-## Step 4: Clear the install markers
+## Step 5: Clear the install markers
 
 ```bash
 rm -f "$DATA/state-repo" "$DATA/state-dir"
@@ -72,34 +99,25 @@ rm -f "$DATA/state-repo" "$DATA/state-dir"
 
 Removing the markers makes the sync hook no-op (`claude-sync.sh` exits early
 without `state-repo`), so it can't act on the half-dismantled store while we
-finish. The hooks are *fully* stopped in Step 6 by disabling or uninstalling
+finish. The hooks are *fully* stopped in Step 7 by disabling or uninstalling
 the plugin; the markers are cleared here so that if the user later re-enables
 a disabled plugin, `install-check.sh` correctly nudges them to re-run
 `/claude-memory-sync:install` rather than resuming against a deleted store.
 
-## Step 5: Remove the store
+## Step 6: Remove the store
 
-With the user's confirmation, delete `<store-dir>` (prefer
-`trash` over `rm -rf`). Everything in it was either pushed (Step 2) or
-copied back (Step 3). Mention that the GitHub repo still exists and holds
-the synced history — deleting it (if wanted) is a manual step:
+If the user chose **Trash it** in Step 2, delete `<store-dir>` (prefer
+`trash` over `rm -rf`). Everything in it was either pushed (Step 3) or copied
+back (Step 4). If they chose **Keep it**, skip this step and leave the
+directory in place. Either way, mention that the GitHub repo still exists and
+holds the synced history — deleting it (if wanted) is a manual step:
 `gh repo delete <slug>`.
 
-## Step 6: Disable or uninstall the plugin
+## Step 7: Disable or uninstall the plugin
 
-This is the **last** action — it must run *after* Step 2's push and the store
+This is the **last** action — it must run *after* Step 3's push and the store
 removal, because uninstalling deletes the plugin cache those steps run from.
-Ask the user (AskUserQuestion) how to leave the plugin, **recommending
-disable**:
-
-- **Disable (recommended)** — keeps the plugin installed but inactive; its
-  session hooks stop loading from the next session on. Reversible anytime
-  with `claude plugin enable`.
-- **Uninstall** — removes the plugin and its data dir entirely; coming back
-  means reinstalling from the marketplace.
-
-Resolve the plugin's id from the installed list, then run only the chosen
-command:
+Run the command for the choice the user made in Step 2 (default: disable).
 
 ```bash
 PLUGIN_ID="$(claude plugin list 2>/dev/null | grep -oE 'claude-memory-sync@[^[:space:]]+' | head -1)"
@@ -112,7 +130,7 @@ The current session already loaded the plugin's `SessionEnd` hook, so it
 lingers until the session restarts — harmless: the markers and store are gone,
 so it no-ops (or, after uninstall, simply fails to exec and is ignored).
 
-## Step 7: Report
+## Step 8: Report
 
 Summarize: how many project directories were restored, whether everything
 was pushed, what was removed, and whether the plugin was **disabled** or
