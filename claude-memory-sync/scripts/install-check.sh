@@ -29,8 +29,10 @@ DIR="$(cat "$DATA/state-dir" 2>/dev/null)"
 # Headless merge session (claude -p inside the merge driver) — stay silent.
 [ -n "${CLAUDE_SYNC_ACTIVE:-}" ] && exit 0
 
-# Deliberately uninstalled (/claude-memory-sync:uninstall) — stay silent
-# until a fresh install clears the sentinel.
+# Legacy "uninstalled" sentinel: pre-0.4.0 the uninstall flow wrote this to
+# keep an enabled plugin quiet. The uninstall skill now disables or removes
+# the plugin instead, so this is only a defensive guard for old data dirs —
+# a fresh install still clears it.
 [ -f "$DATA/uninstalled" ] && exit 0
 
 if [ ! -f "$MARKER" ]; then
