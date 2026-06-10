@@ -7,7 +7,8 @@
 # created and maintained automatically here (see lib-link.sh). ~/.claude
 # itself is not a git repo and holds no sync state.
 #   pull — SessionStart hook: link/adopt, then fetch + fast-forward, or
-#          driver-assisted merge if diverged
+#          driver-assisted merge if diverged; also pushes any commits a
+#          missed/failed SessionEnd left stranded
 #   push — SessionEnd hook: link/adopt, commit local changes, push; merge +
 #          retry if the remote moved
 #
@@ -91,7 +92,21 @@ if ! mkdir "$LOCK" 2>/dev/null; then
     exit 0
   fi
 fi
+# EXIT alone doesn't fire on an untrapped signal (the hook timeout sends
+# one), so route INT/TERM through exit to release the lock promptly; the
+# 10-minute reap above remains the backstop for SIGKILL.
 trap 'rmdir "$LOCK" 2>/dev/null' EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+# A run killed mid-merge (SIGKILL — no trap can catch it) leaves MERGE_HEAD
+# and possibly conflict markers in the tree; commit_local would then blindly
+# complete the half-done merge and sync the markers everywhere. Abort the
+# stale merge first — a future merge_remote redoes it from a clean tree.
+if git rev-parse -q --verify MERGE_HEAD >/dev/null 2>&1; then
+  log WARN "stale merge state from an interrupted run; aborting it"
+  git merge --abort >>"$LOG" 2>&1 || { log WARN "merge --abort failed; deferring"; exit 0; }
+fi
 
 # The custom merge driver lives in the store repo's local git config, which
 # is per-machine — re-register idempotently so a fresh install gets it on
@@ -129,12 +144,21 @@ merge_remote() {
 case "${1:-}" in
   pull)
     git fetch -q origin main >>"$LOG" 2>&1 || { log INFO "pull: fetch failed (offline?)"; exit 0; }
-    git merge-base --is-ancestor origin/main HEAD 2>/dev/null && exit 0 # already current
-    commit_local
-    if git merge-base --is-ancestor HEAD origin/main 2>/dev/null; then
-      git merge -q --ff-only origin/main >>"$LOG" 2>&1 && log INFO "pull: fast-forwarded"
-    else
-      merge_remote && log INFO "pull: merged diverged histories"
+    if ! git merge-base --is-ancestor origin/main HEAD 2>/dev/null; then
+      commit_local
+      if git merge-base --is-ancestor HEAD origin/main 2>/dev/null; then
+        git merge -q --ff-only origin/main >>"$LOG" 2>&1 && log INFO "pull: fast-forwarded"
+      else
+        merge_remote && log INFO "pull: merged diverged histories"
+      fi
+    fi
+    # Convergence backstop: SessionEnd is the less reliable boundary (crash,
+    # force-quit, offline push), and stranded commits would otherwise wait
+    # for a future SessionEnd to succeed. Push whenever we're ahead — this
+    # also publishes the merge commit created just above.
+    ahead=$(git rev-list --count origin/main..HEAD 2>/dev/null || echo 0)
+    if [ "$ahead" -gt 0 ]; then
+      git push -q origin main >>"$LOG" 2>&1 && log INFO "pull: pushed $ahead stranded commit(s)"
     fi
     ;;
   push)
