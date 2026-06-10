@@ -257,6 +257,104 @@ assert "identical local copy auto-relinked" test -L "$PROJECTS/$RSLUG/memory"
 assert "relink points back to store dir" test "$(cd "$PROJECTS/$RSLUG/memory" && pwd -P)" = "$(cd "$RSDIR" && pwd -P)"
 assert "store payload intact after relink" test -f "$RSDIR/MEMORY.md" -a -f "$RSDIR/detail.md"
 
+# A PATH-stubbed `claude` keeps merge-driver tests hermetic: the real CLI
+# must never run inside the harness. Tests 16-18 use the failing stub so any
+# driver invocation falls back to deterministic git merge-file.
+STUB="$SCRATCH/bin"
+mkdir -p "$STUB"
+printf '#!/bin/sh\ncat >/dev/null\nexit 1\n' > "$STUB/claude"
+chmod +x "$STUB/claude"
+run_sync_stub() { # run_sync_stub <projdir> <pull|push>
+  env HOME="$SCRATCH" PATH="$STUB:$PATH" CLAUDE_PROJECT_DIR="$1" bash "$SYNC" "$2" </dev/null
+}
+
+# ---------- 16: stranded commit pushed on pull ----------
+# SessionEnd is the unreliable boundary: a crash or offline push leaves a
+# local commit stranded. The next pull must publish it, not skip out at the
+# already-current check.
+echo "== 16: stranded commit pushed on pull =="
+printf -- '- stranded fact\n' >> "$RSDIR/MEMORY.md"
+env HOME="$SCRATCH" git -C "$STORE" add -A
+env HOME="$SCRATCH" git -C "$STORE" commit -q -m "stranded"
+assert "precondition: local ahead of origin" sh -c "test \"\$(env HOME='$SCRATCH' git -C '$STORE' rev-parse HEAD)\" != \"\$(git -C '$REMOTE' rev-parse main)\""
+run_sync "$RPROJ" pull
+assert "pull pushed the stranded commit" test "$(env HOME="$SCRATCH" git -C "$STORE" rev-parse HEAD)" = "$(git -C "$REMOTE" rev-parse main)"
+
+# ---------- 17: diverged histories merge on pull and publish ----------
+echo "== 17: diverged merge + push =="
+TMP2="$SCRATCH/machine2-store"
+env HOME="$SCRATCH" git clone -q "$REMOTE" "$TMP2"
+printf 'note from machine two\n' > "$TMP2/memory/github-testowner-reinstall-sim/other_machine.md"
+env HOME="$SCRATCH" git -C "$TMP2" add -A
+env HOME="$SCRATCH" git -C "$TMP2" commit -q -m "machine two"
+env HOME="$SCRATCH" git -C "$TMP2" push -q origin main
+printf -- '- local divergent fact\n' >> "$PROJECTS/$RSLUG/memory/MEMORY.md"
+run_sync_stub "$RPROJ" pull
+assert "histories merged and pushed" test "$(env HOME="$SCRATCH" git -C "$STORE" rev-parse HEAD)" = "$(git -C "$REMOTE" rev-parse main)"
+assert "their file arrived" test -f "$RSDIR/other_machine.md"
+assert "local fact survived the merge" grep -q 'local divergent fact' "$RSDIR/MEMORY.md"
+
+# ---------- 18: interrupted-merge recovery ----------
+# A run killed mid-merge leaves MERGE_HEAD + conflict markers. The next sync
+# must abort that stale merge instead of letting commit_local blindly commit
+# the markers and complete the half-done merge.
+echo "== 18: interrupted-merge recovery =="
+env HOME="$SCRATCH" git -C "$TMP2" pull -q origin main
+printf '# Memory index (machine two title)\n' > "$TMP2/memory/github-testowner-reinstall-sim/MEMORY.md"
+env HOME="$SCRATCH" git -C "$TMP2" add -A
+env HOME="$SCRATCH" git -C "$TMP2" commit -q -m "machine two retitle"
+env HOME="$SCRATCH" git -C "$TMP2" push -q origin main
+printf '# Memory index (machine one title)\n' > "$PROJECTS/$RSLUG/memory/MEMORY.md"
+env HOME="$SCRATCH" git -C "$STORE" add -A
+env HOME="$SCRATCH" git -C "$STORE" commit -q -m "machine one retitle"
+env HOME="$SCRATCH" git -C "$STORE" fetch -q origin main
+env HOME="$SCRATCH" PATH="$STUB:$PATH" git -C "$STORE" merge origin/main >/dev/null 2>&1
+assert "precondition: merge stopped mid-way" test -f "$STORE/.git/MERGE_HEAD"
+run_sync_stub "$RPROJ" pull
+assert "stale MERGE_HEAD cleared" test ! -f "$STORE/.git/MERGE_HEAD"
+assert "working tree clean after recovery" test -z "$(env HOME="$SCRATCH" git -C "$STORE" status --porcelain)"
+assert "no conflict markers in memory file" sh -c "! grep -q '<<<<<<<' '$RSDIR/MEMORY.md'"
+assert "no conflict markers committed" sh -c "! env HOME='$SCRATCH' git -C '$STORE' grep -q '<<<<<<<' HEAD"
+assert "recovery logged" grep -q 'stale merge state' "$DATA/sync.log"
+# converge for the remaining tests (the real conflict stays deferred here)
+env HOME="$SCRATCH" git -C "$STORE" reset -q --hard origin/main
+
+# ---------- 19: renamed/transferred origin → CONFLICT, never auto-healed ----------
+echo "== 19: renamed-origin conflict =="
+git -C "$RPROJ" remote set-url origin "https://github.com/testowner/reinstall-sim-renamed.git"
+run_sync "$RPROJ" pull
+assert "symlink left in place" test -L "$PROJECTS/$RSLUG/memory"
+assert "still points at the old store dir" test "$(cd "$PROJECTS/$RSLUG/memory" && pwd -P)" = "$(cd "$RSDIR" && pwd -P)"
+assert "no fresh store dir adopted" test ! -e "$STORE/memory/github-testowner-reinstall-sim-renamed"
+RNUDGE="$(run_check "$RPROJ")"
+assert "install-check explains the rename" sh -c "printf '%s' \"$RNUDGE\" | grep -q 'renamed or transferred'"
+# apply the prescribed fix: update the breadcrumb to the new identity
+printf 'github.com/testowner/reinstall-sim-renamed\n' > "$RSDIR/.origin"
+run_sync "$RPROJ" push
+assert "relinked under updated .origin" test "$(cd "$PROJECTS/$RSLUG/memory" && pwd -P)" = "$(cd "$RSDIR" && pwd -P)"
+assert "install-check quiet after .origin fix" test -z "$(run_check "$RPROJ")"
+assert "breadcrumb fix committed" test -z "$(env HOME="$SCRATCH" git -C "$STORE" status --porcelain)"
+
+# ---------- 20: merge-driver plausibility guard ----------
+# A hallucinated/truncated AI merge (far smaller than the smaller input)
+# must be rejected in favor of git merge-file; a plausible union is accepted.
+echo "== 20: merge-driver output guard =="
+MD="$SCRATCH/mergetest"
+mkdir -p "$MD"
+{ printf '# Memory index\n'; for i in 1 2 3 4 5 6 7 8; do printf -- '- long-standing fact number %s\n' "$i"; done; } > "$MD/base"
+{ printf -- '- ours leading fact\n'; cat "$MD/base"; } > "$MD/ours"
+{ cat "$MD/base"; printf -- '- theirs trailing fact\n'; } > "$MD/theirs"
+printf '#!/bin/sh\ncat >/dev/null\nprintf "<<<MERGED>>>\\ntiny\\n<<<END>>>\\n"\n' > "$STUB/claude"
+cp "$MD/ours" "$MD/ours.run"
+env HOME="$SCRATCH" PATH="$STUB:$PATH" bash "$SCRIPTS/claude-merge.sh" "$MD/base" "$MD/ours.run" "$MD/theirs" "memtest.md"
+assert "tiny output rejected (merge-file ran)" sh -c "! grep -q tiny '$MD/ours.run'"
+assert "deterministic union kept both sides" sh -c "grep -q 'ours leading fact' '$MD/ours.run' && grep -q 'theirs trailing fact' '$MD/ours.run'"
+{ printf '<<<MERGED>>>\n'; printf -- '- ours leading fact\n'; cat "$MD/base"; printf -- '- theirs trailing fact\n'; printf '<<<END>>>\n'; } > "$MD/plausible"
+printf '#!/bin/sh\ncat >/dev/null\ncat "%s"\n' "$MD/plausible" > "$STUB/claude"
+cp "$MD/ours" "$MD/ours.run"
+env HOME="$SCRATCH" PATH="$STUB:$PATH" bash "$SCRIPTS/claude-merge.sh" "$MD/base" "$MD/ours.run" "$MD/theirs" "memtest.md"
+assert "plausible AI merge accepted" sh -c "grep -q 'ours leading fact' '$MD/ours.run' && grep -q 'theirs trailing fact' '$MD/ours.run' && grep -q 'fact number 8' '$MD/ours.run'"
+
 # ---------- summary ----------
 echo "=================================="
 echo "PASS=$PASS FAIL=$FAIL  (scratch: $SCRATCH)"

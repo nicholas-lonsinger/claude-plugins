@@ -71,6 +71,13 @@ resolve_identity "$CWD"
 [ "$ID_KIND" = skip ] && exit 0
 classify_link_state
 if [ "$LINK_STATE" = CONFLICT ]; then
-  echo "claude-memory-sync: this project's memory exists both locally (~/.claude/projects/$ID_SLUG/memory) and in the store ($LINK_TARGET), or the store entry's identity is ambiguous — it will not be merged automatically. Explain this to the user and offer to reconcile the two interactively (compare the directories, merge distinct facts, then leave the local path as a symlink to the store directory)."
+  if [ -L "$LINK_SRC" ]; then
+    # Identity-mismatch flavor: a symlink is in place but some store entry's
+    # recorded .origin doesn't line up with this repo's current origin —
+    # a renamed/transferred origin, or a missing/corrupt .origin breadcrumb.
+    echo "claude-memory-sync: this project's memory symlink (~/.claude/projects/$ID_SLUG/memory) points at a store entry whose recorded origin no longer matches this repo's origin ($ID_ORIGIN) — likely the GitHub repo was renamed or transferred. Sync will not touch it. Explain this to the user; if it is the same project, offer to update that store entry's .origin file to '$ID_ORIGIN' (other machines then relink automatically). If it is genuinely a different project, the symlink should be removed so a fresh memory dir can be adopted."
+  else
+    echo "claude-memory-sync: this project's memory exists both locally (~/.claude/projects/$ID_SLUG/memory) and in the store ($LINK_TARGET), or the store entry's identity is ambiguous — it will not be merged automatically. Explain this to the user and offer to reconcile the two interactively (compare the directories, merge distinct facts, then leave the local path as a symlink to the store directory)."
+  fi
 fi
 exit 0

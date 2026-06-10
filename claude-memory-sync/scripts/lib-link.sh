@@ -151,9 +151,11 @@ resolve_identity() {
 #     HEAL_REDUNDANT   real local memory byte-identical to an existing store
 #                      dir (e.g. an uninstall→reinstall cycle) → drop the
 #                      redundant copy and relink; loses no unique content
-#     CONFLICT         both sides have DISTINCT payload, or identity is
-#                      ambiguous — never resolved automatically (install-check
-#                      nudges)
+#     CONFLICT         both sides have DISTINCT payload, identity is
+#                      ambiguous, or the existing symlink points at a
+#                      payload-bearing store dir the current identity no
+#                      longer selects (renamed/transferred origin) — never
+#                      resolved automatically (install-check nudges)
 #     NOOP             nothing to do yet (no memory anywhere)
 classify_link_state() {
   LINK_STATE=NOOP
@@ -175,12 +177,29 @@ classify_link_state() {
     fi
   fi
   if [ -L "$LINK_SRC" ]; then
-    if [ -d "$LINK_TARGET" ] \
-      && [ "$(canon_path "$LINK_SRC")" = "$(canon_path "$LINK_TARGET")" ]; then
+    cls_cur="$(canon_path "$LINK_SRC")"
+    if [ -d "$LINK_TARGET" ] && [ "$cls_cur" = "$(canon_path "$LINK_TARGET")" ]; then
       LINK_STATE=LINKED
-    else
-      LINK_STATE=HEAL
+      return 0
     fi
+    # A live symlink into a payload-bearing store dir that identity no longer
+    # selects (and no replacement target exists) is the signature of a renamed
+    # or transferred origin: the old store dir still holds this project's
+    # memory under its old identity. Healing would drop the link and let a
+    # fresh adoption split the memory in two — surface CONFLICT instead; the
+    # interactive fix is updating that dir's .origin to the new identity,
+    # after which every machine relinks to it by breadcrumb.
+    if [ ! -d "$LINK_TARGET" ]; then
+      case "$cls_cur" in
+        "$MEMSYNC_STORE"/*)
+          if dir_has_md "$cls_cur"; then
+            LINK_STATE=CONFLICT
+            return 0
+          fi
+          ;;
+      esac
+    fi
+    LINK_STATE=HEAL
     return 0
   fi
   if [ -d "$LINK_SRC" ]; then

@@ -48,13 +48,30 @@ $(cat "$THEIRS")
 EOF
 )
 
-out=$(printf '%s' "$prompt" | claude -p --model claude-sonnet-4-6 2>>"$LOG") || {
+# The model alias (not a pinned full name) always resolves to the latest
+# Sonnet, so the driver doesn't silently age onto a deprecated model.
+out=$(printf '%s' "$prompt" | claude -p --model sonnet 2>>"$LOG") || {
   log "claude -p failed for $PATHNAME; git merge-file fallback"
   fallback
 }
 
 merged=$(printf '%s\n' "$out" | awk '/^<<<MERGED>>>$/{f=1;next} /^<<<END>>>$/{f=0} f')
 [ -z "$merged" ] && { log "no merged content extracted for $PATHNAME; git merge-file fallback"; fallback; }
+
+# Plausibility guard: a union-of-knowledge merge can't come back smaller
+# than half the SMALLER input side (even aggressive one-sided deletions
+# leave the result near the side that kept less). A result below that
+# indicates truncation or a hallucinated rewrite — the failure mode that
+# silently loses memory — so hand it to the deterministic merge instead.
+merged_len=$(($(printf '%s' "$merged" | wc -c)))
+ours_len=$(($(wc -c <"$OURS" 2>/dev/null || echo 0)))
+theirs_len=$(($(wc -c <"$THEIRS" 2>/dev/null || echo 0)))
+min_len=$ours_len
+[ "$theirs_len" -lt "$min_len" ] && min_len=$theirs_len
+if [ "$merged_len" -lt $((min_len / 2)) ]; then
+  log "merged output implausibly small ($merged_len of min-side $min_len bytes) for $PATHNAME; git merge-file fallback"
+  fallback
+fi
 
 # A malformed JSON file would silently break whatever reads it — validate
 # JSON before accepting the AI merge. (Memory scope is all-markdown today;
