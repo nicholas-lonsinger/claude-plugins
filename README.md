@@ -40,23 +40,35 @@ Environment setup utilities for Claude Code.
 
 ### claude-memory-sync
 
-Cross-machine sync for Claude Code's per-project memory files
-(`~/.claude/projects/<slug>/memory/`). The `~/.claude` directory becomes the
-working copy of a **private** GitHub state repo with a whitelist
-`.gitignore` (memory files only — transcripts, settings, and caches stay
-local). Session hooks keep it synced automatically: pull on session start,
+Cross-machine sync for Claude Code's memory and user-scope instructions,
+backed by a **private** GitHub store repo (working copy at a path chosen at
+install time, default `~/.claude-memory-sync`). Two kinds of content sync:
+
+- **Per-project memory** (`~/.claude/projects/<slug>/memory/`): each
+  project's memory directory becomes a symlink into the store's
+  `memory/<name>/`, keyed by git origin identity — projects link up
+  automatically as they're visited, with no per-project setup.
+- **User-scope instructions and memories** (`<store>/user/`): an
+  always-loaded global `CLAUDE.md` plus lazily-loaded indexed memories,
+  imported into every session through an `@`-reference chain from
+  `~/.claude/CLAUDE.md`.
+
+Session hooks keep everything synced automatically: pull on session start,
 push on session end, with concurrent edits to memory markdown reconciled by
-an AI semantic merge driver (union-of-knowledge, three-way). One user-level
-install covers every project on the machine.
+an AI semantic merge driver (union-of-knowledge, three-way). `~/.claude`
+itself stays free of git state. One user-level install covers every project
+on the machine.
 
 **Skills:**
 
 | Skill | Command | Description |
 |-------|---------|-------------|
-| install | `/claude-memory-sync:install` | Set up this machine: attach `~/.claude` to a private state repo (creating it if needed) and verify the sync round-trip |
+| install | `/claude-memory-sync:install` | Set up this machine: create or clone the private store repo, link per-project memory, and enable user-scope sync |
+| uninstall | `/claude-memory-sync:uninstall` | Disable sync on this machine and restore the stock layout — memory copied back, user-scope files kept working locally |
 
 Until install runs, the bundled hooks no-op silently and a session-start
-notice offers the install skill.
+notice offers the install skill; the same channel later surfaces anything
+needing attention (broken store, missing import line, memory conflicts).
 
 **Requirements:** `git`, `gh` (authenticated), macOS or Linux
 

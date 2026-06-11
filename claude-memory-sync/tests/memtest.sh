@@ -45,16 +45,23 @@ cat > "$SCRATCH/.gitconfig" <<EOF
 	defaultBranch = main
 EOF
 git init --bare -q "$REMOTE"
-mkdir -p "$STORE/memory"
+mkdir -p "$STORE/memory" "$STORE/user"
 cp "$TPL/gitignore" "$STORE/.gitignore"
 cp "$TPL/gitattributes" "$STORE/.gitattributes"
 cp "$TPL/README.md" "$STORE/README.md"
+cp "$TPL/user/CLAUDE.md" "$STORE/user/CLAUDE.md"
+cp "$TPL/user/MEMORY.md" "$STORE/user/MEMORY.md"
 env HOME="$SCRATCH" git -C "$STORE" init -q -b main
 env HOME="$SCRATCH" git -C "$STORE" add -A
 env HOME="$SCRATCH" git -C "$STORE" commit -q -m "init"
 env HOME="$SCRATCH" git -C "$STORE" remote add origin "$REMOTE"
 env HOME="$SCRATCH" git -C "$STORE" push -q -u origin main
 printf '%s\n' "testowner/teststate" > "$DATA/state-repo"
+# User-scope chain on this machine (stamped hub + @ line in the user's
+# CLAUDE.md), so the healthy-quiet install-check assertions below exercise
+# the full integrity chain end to end.
+sed "s|{{STORE}}|$STORE|g" "$TPL/instructions.md" > "$DATA/CLAUDE.md"
+printf '<!-- claude-memory-sync: synced user-scope context -->\n@%s/CLAUDE.md\n' "$DATA" > "$SCRATCH/.claude/CLAUDE.md"
 
 # ---------- 1: adopt a git project ----------
 echo "== 1: adoption of a git project =="
@@ -214,6 +221,8 @@ CUSTOM_STORE="$SCRATCH3/xdg/memstore"   # deliberately not ~/.claude-memory-sync
 mkdir -p "$SCRATCH3/.claude/projects" "$DATA3" "$(dirname "$CUSTOM_STORE")"
 printf '%s\n' "testowner/teststate" > "$DATA3/state-repo"
 printf '%s\n' "$CUSTOM_STORE" > "$DATA3/state-dir"
+sed "s|{{STORE}}|$CUSTOM_STORE|g" "$TPL/instructions.md" > "$DATA3/CLAUDE.md"
+printf '@%s/CLAUDE.md\n' "$DATA3" > "$SCRATCH3/.claude/CLAUDE.md"
 env HOME="$SCRATCH3" git clone -q "$REMOTE" "$CUSTOM_STORE"
 M3PROJ="$SCRATCH3/code/kernova-sim-custom"
 mkdir -p "$M3PROJ"
@@ -354,6 +363,56 @@ printf '#!/bin/sh\ncat >/dev/null\ncat "%s"\n' "$MD/plausible" > "$STUB/claude"
 cp "$MD/ours" "$MD/ours.run"
 env HOME="$SCRATCH" PATH="$STUB:$PATH" bash "$SCRIPTS/claude-merge.sh" "$MD/base" "$MD/ours.run" "$MD/theirs" "memtest.md"
 assert "plausible AI merge accepted" sh -c "grep -q 'ours leading fact' '$MD/ours.run' && grep -q 'theirs trailing fact' '$MD/ours.run' && grep -q 'fact number 8' '$MD/ours.run'"
+
+# ---------- 21: instruction hub stamping ----------
+# The hub is refresh-only: a stale hub (the template changed under a plugin
+# update) is re-rendered with the store path baked in; an absent hub (user
+# scope never enabled on this machine) is never created by the hook.
+echo "== 21: instruction hub stamping =="
+printf 'stale hub from an older plugin version\n' > "$DATA/CLAUDE.md"
+run_sync "$PROJ3" pull
+assert "stale hub re-stamped with store imports" grep -qF "@$STORE/user/CLAUDE.md" "$DATA/CLAUDE.md"
+assert "no placeholder left unrendered" sh -c "! grep -q '{{STORE}}' '$DATA/CLAUDE.md'"
+assert "re-stamp logged" grep -q 'instruction hub re-stamped' "$DATA/sync.log"
+HUB_SUM="$(cksum < "$DATA/CLAUDE.md")"
+run_sync "$PROJ3" pull
+assert "re-stamp is content-stable" test "$(cksum < "$DATA/CLAUDE.md")" = "$HUB_SUM"
+assert "no tmp litter" test ! -e "$DATA/CLAUDE.md.tmp"
+rm "$DATA/CLAUDE.md"
+run_sync "$PROJ3" pull
+assert "absent hub not created by the hook" test ! -e "$DATA/CLAUDE.md"
+sed "s|{{STORE}}|$STORE|g" "$TPL/instructions.md" > "$DATA/CLAUDE.md"   # restore
+
+# ---------- 22: user-scope integrity nudges ----------
+# install-check validates the whole import chain and nudges on the first gap;
+# every gap re-asserts each session and the fix is the idempotent install
+# skill (or, for the @ line, a consented one-line edit).
+echo "== 22: user-scope integrity nudges =="
+printf '# only my own machine-local stuff\n' > "$SCRATCH/.claude/CLAUDE.md"
+run_check "$PROJ3" > "$SCRATCH/out22a"
+assert "edited-out @ line nudges with the exact line" grep -qF "@$DATA/CLAUDE.md" "$SCRATCH/out22a"
+printf '<!-- claude-memory-sync: synced user-scope context -->\n@%s/CLAUDE.md\n' "$DATA" >> "$SCRATCH/.claude/CLAUDE.md"
+assert "quiet once @ line restored" test -z "$(run_check "$PROJ3")"
+mv "$DATA/CLAUDE.md" "$SCRATCH/hub-aside"            # pre-0.5.0 machine: no hub
+run_check "$PROJ3" > "$SCRATCH/out22b"
+assert "missing hub nudges (the upgrade path)" grep -q 'instruction hub' "$SCRATCH/out22b"
+assert "missing-hub nudge points at install" grep -q 'claude-memory-sync:install' "$SCRATCH/out22b"
+mv "$SCRATCH/hub-aside" "$DATA/CLAUDE.md"
+mv "$STORE/user" "$SCRATCH/user-aside"               # pre-0.5.0 store: no user/
+run_check "$PROJ3" > "$SCRATCH/out22c"
+assert "missing store user files nudges install" grep -q 'claude-memory-sync:install' "$SCRATCH/out22c"
+mv "$SCRATCH/user-aside" "$STORE/user"
+assert "quiet when the chain is fully healthy" test -z "$(run_check "$PROJ3")"
+
+# ---------- 23: user-scope content round-trips ----------
+echo "== 23: user-scope content round-trips =="
+printf -- '- [Round-trip fact](round-trip-fact.md) — global memory test\n' >> "$STORE/user/MEMORY.md"
+printf 'a global fact that must reach every machine\n' > "$STORE/user/round-trip-fact.md"
+run_sync "$PROJ3" push
+assert "user-scope change committed and pushed" test "$(env HOME="$SCRATCH" git -C "$STORE" rev-parse HEAD)" = "$(git -C "$REMOTE" rev-parse main)"
+env HOME="$SCRATCH" git -C "$TMP2" pull -q origin main
+assert "second machine sees the global memory" grep -q 'a global fact' "$TMP2/user/round-trip-fact.md"
+assert "second machine sees the index line" grep -q 'Round-trip fact' "$TMP2/user/MEMORY.md"
 
 # ---------- summary ----------
 echo "=================================="
