@@ -120,8 +120,12 @@ if [ "$(git config merge.claude-ai.driver 2>/dev/null)" != "$SCRIPT_DIR/claude-m
 fi
 
 # $DATA/CLAUDE.md is the instruction hub the user's ~/.claude/CLAUDE.md
-# @-imports: where-to-save triage guidance plus @-imports of the store's
-# user/ files. Its template ships in the versioned plugin cache, so — like
+# @-imports: where-to-save triage guidance plus @-imports of $DATA/user/,
+# a symlink into the store's user/ dir maintained just below. Import paths
+# stay inside ~/.claude on purpose — the import loader scopes by the link
+# path, not the resolved target (the same property the per-project memory
+# symlinks rely on) — so the store location lives only in the symlink
+# target. The hub template ships in the versioned plugin cache, so — like
 # the driver registration above — re-render it idempotently on every run;
 # a plugin update then propagates at the next session. Refresh-only:
 # creating the hub (and the consent-gated @ line in the user's own
@@ -131,13 +135,25 @@ HUB="$DATA/CLAUDE.md"
 HUB_TPL="$SCRIPT_DIR/../templates/instructions.md"
 if [ -f "$HUB" ] && [ -f "$HUB_TPL" ]; then
   while IFS= read -r tpl_line || [ -n "$tpl_line" ]; do
-    printf '%s\n' "${tpl_line//"{{STORE}}"/$DIR}"
+    printf '%s\n' "${tpl_line//"{{DATA}}"/$DATA}"
   done <"$HUB_TPL" >"$HUB.tmp"
   if cmp -s "$HUB.tmp" "$HUB"; then
     rm -f "$HUB.tmp"
   else
     mv "$HUB.tmp" "$HUB"
     log INFO "instruction hub re-stamped from plugin template"
+  fi
+  # Keep $DATA/user pointing at the store's user/ dir (this also heals a
+  # store move via state-dir). A real directory here is foreign or restored
+  # content — never replace it; install-check surfaces it for interactive
+  # repair.
+  if [ -L "$DATA/user" ] || [ ! -e "$DATA/user" ]; then
+    if [ "$(readlink "$DATA/user" 2>/dev/null)" != "$DIR/user" ]; then
+      ln -sfn "$DIR/user" "$DATA/user"
+      log INFO "user-scope symlink set to $DIR/user"
+    fi
+  else
+    log WARN "$DATA/user exists but is not a symlink; leaving it untouched"
   fi
 fi
 

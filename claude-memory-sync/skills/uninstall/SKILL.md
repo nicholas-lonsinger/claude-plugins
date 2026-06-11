@@ -120,8 +120,10 @@ If `~/.claude/CLAUDE.md` imports the instruction hub
    content directly into `~/.claude/CLAUDE.md` and keep only the memory
    import.
 
-3. Remove the hub: `rm -f "$DATA/CLAUDE.md"` — it references the store path
-   and would go stale the moment the store is removed.
+3. Remove the hub and the store symlink:
+   `rm -f "$DATA/CLAUDE.md" "$DATA/user"` — both reference the store and go
+   stale the moment it is removed (`rm` on the symlink removes only the
+   link, never the store contents).
 
 If the import line is absent (user-scope sync was never enabled on this
 machine), skip this step.
