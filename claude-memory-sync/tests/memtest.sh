@@ -221,7 +221,9 @@ CUSTOM_STORE="$SCRATCH3/xdg/memstore"   # deliberately not ~/.claude-memory-sync
 mkdir -p "$SCRATCH3/.claude/projects" "$DATA3" "$(dirname "$CUSTOM_STORE")"
 printf '%s\n' "testowner/teststate" > "$DATA3/state-repo"
 printf '%s\n' "$CUSTOM_STORE" > "$DATA3/state-dir"
-sed "s|{{STORE}}|$CUSTOM_STORE|g" "$TPL/instructions.md" > "$DATA3/CLAUDE.md"
+# Deliberately stale hub: the sync run below must re-render it with the
+# CUSTOM store path from state-dir, not the default.
+printf 'stale hub awaiting re-stamp\n' > "$DATA3/CLAUDE.md"
 printf '@%s/CLAUDE.md\n' "$DATA3" > "$SCRATCH3/.claude/CLAUDE.md"
 env HOME="$SCRATCH3" git clone -q "$REMOTE" "$CUSTOM_STORE"
 M3PROJ="$SCRATCH3/code/kernova-sim-custom"
@@ -234,6 +236,7 @@ M3LINK="$SCRATCH3/.claude/projects/$M3SLUG/memory"
 assert "linked into the custom store" test -L "$M3LINK"
 assert "symlink target is under custom store" sh -c "case \"\$(cd '$M3LINK' && pwd -P)\" in '$CUSTOM_STORE'/*) exit 0;; *) exit 1;; esac"
 assert "default store path never created" test ! -e "$SCRATCH3/.claude-memory-sync"
+assert "hub re-stamped with the custom store path" grep -qF "@$CUSTOM_STORE/user/CLAUDE.md" "$DATA3/CLAUDE.md"
 assert "install-check quiet for custom-store project" test -z "$(env HOME="$SCRATCH3" CLAUDE_PROJECT_DIR="$M3PROJ" bash "$CHECK" </dev/null)"
 
 # ---------- 15: identical local copy auto-relinks (uninstall→reinstall) ----------
