@@ -97,10 +97,13 @@ counterpart before moving on. Leave non-symlink memory directories alone.
 If `~/.claude/CLAUDE.md` imports the instruction hub
 (`grep -F "@$DATA/CLAUDE.md" ~/.claude/CLAUDE.md` matches):
 
-1. Copy the store's user-scope dir to a plain local location:
+1. Copy the store's user-scope dir to a plain local location (the guard
+   keeps a re-run of this skill from nesting a second copy inside an
+   existing one — if `~/.claude/user` already exists, compare and reconcile
+   with the user instead):
 
    ```bash
-   cp -a "$STORE/user" "$HOME/.claude/user"
+   [ -e "$HOME/.claude/user" ] || cp -a "$STORE/user" "$HOME/.claude/user"
    ```
 
 2. In `~/.claude/CLAUDE.md`, replace the hub import line (and its

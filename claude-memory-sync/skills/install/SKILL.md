@@ -177,14 +177,12 @@ import chain described under "How it works". Three sub-steps, all idempotent:
 
 2. **Add the import line to `~/.claude/CLAUDE.md`.** This file is
    user-owned — explain what the line does and get consent before editing;
-   create the file if it doesn't exist. Skip silently if already present:
+   create the file if it doesn't exist. Skip silently if already present.
+   The `@` line must start at column 0:
 
    ```bash
-   grep -qF "@$DATA/CLAUDE.md" ~/.claude/CLAUDE.md 2>/dev/null || cat >> ~/.claude/CLAUDE.md <<EOF
-
-   <!-- claude-memory-sync: synced user-scope context -->
-   @$DATA/CLAUDE.md
-   EOF
+   grep -qF "@$DATA/CLAUDE.md" ~/.claude/CLAUDE.md 2>/dev/null || \
+     printf '\n<!-- claude-memory-sync: synced user-scope context -->\n@%s/CLAUDE.md\n' "$DATA" >> ~/.claude/CLAUDE.md
    ```
 
 3. **Migrate existing global content.** If `<store-dir>/user/CLAUDE.md` is
