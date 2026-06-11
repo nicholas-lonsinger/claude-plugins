@@ -1,7 +1,7 @@
 # Claude Code memory backup
 
-Cross-machine backup and sync of Claude Code's per-project memory files,
-managed by the
+Cross-machine backup and sync of Claude Code's per-project memory files and
+user-scope instructions, managed by the
 [claude-memory-sync](https://github.com/nicholas-lonsinger/claude-plugins)
 plugin. The working copy lives at the path chosen at install time (default
 `~/.claude-memory-sync`); one directory per
@@ -9,6 +9,11 @@ project under `memory/<name>/`, keyed by git origin identity (each carries a
 `.origin` breadcrumb). Per machine, the plugin's session hooks automatically
 symlink `~/.claude/projects/<slug>/memory` into this store — projects link up
 as they're visited, with no per-project setup.
+
+User-scope content lives under `user/`: `CLAUDE.md` (always-loaded global
+instructions), `MEMORY.md` (memory index), and adjacent memory files read on
+demand. Each machine imports them into every session via an `@`-reference
+chain stamped by the plugin from `~/.claude/CLAUDE.md`.
 
 Do not edit this repo by hand; syncing is automatic via Claude Code session
 hooks.

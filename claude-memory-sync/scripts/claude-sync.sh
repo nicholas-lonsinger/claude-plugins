@@ -4,8 +4,11 @@
 # /claude-memory-sync:install). The repo holds one directory per project
 # under memory/<name>/, keyed by git origin identity; per machine,
 # ~/.claude/projects/<slug>/memory is a directory symlink into the store,
-# created and maintained automatically here (see lib-link.sh). ~/.claude
-# itself is not a git repo and holds no sync state.
+# created and maintained automatically here (see lib-link.sh). The repo
+# also holds user-scope content under user/ (always-load CLAUDE.md, memory
+# index, memory files), imported into every session via an @-reference
+# chain from the user's ~/.claude/CLAUDE.md. ~/.claude itself is not a git
+# repo and holds no sync state.
 #   pull — SessionStart hook: link/adopt, then fetch + fast-forward, or
 #          driver-assisted merge if diverged; also pushes any commits a
 #          missed/failed SessionEnd left stranded
@@ -114,6 +117,28 @@ fi
 if [ "$(git config merge.claude-ai.driver 2>/dev/null)" != "$SCRIPT_DIR/claude-merge.sh %O %A %B %P" ]; then
   git config merge.claude-ai.name "Claude semantic three-way merge"
   git config merge.claude-ai.driver "$SCRIPT_DIR/claude-merge.sh %O %A %B %P"
+fi
+
+# $DATA/CLAUDE.md is the instruction hub the user's ~/.claude/CLAUDE.md
+# @-imports: where-to-save triage guidance plus @-imports of the store's
+# user/ files. Its template ships in the versioned plugin cache, so — like
+# the driver registration above — re-render it idempotently on every run;
+# a plugin update then propagates at the next session. Refresh-only:
+# creating the hub (and the consent-gated @ line in the user's own
+# CLAUDE.md) is the install skill's job, so a machine that hasn't enabled
+# user-scope sync stays untouched.
+HUB="$DATA/CLAUDE.md"
+HUB_TPL="$SCRIPT_DIR/../templates/instructions.md"
+if [ -f "$HUB" ] && [ -f "$HUB_TPL" ]; then
+  while IFS= read -r tpl_line || [ -n "$tpl_line" ]; do
+    printf '%s\n' "${tpl_line//"{{STORE}}"/$DIR}"
+  done <"$HUB_TPL" >"$HUB.tmp"
+  if cmp -s "$HUB.tmp" "$HUB"; then
+    rm -f "$HUB.tmp"
+  else
+    mv "$HUB.tmp" "$HUB"
+    log INFO "instruction hub re-stamped from plugin template"
+  fi
 fi
 
 # Maintain this project's symlink into the store: link, adopt a freshly
