@@ -57,10 +57,11 @@ env HOME="$SCRATCH" git -C "$STORE" commit -q -m "init"
 env HOME="$SCRATCH" git -C "$STORE" remote add origin "$REMOTE"
 env HOME="$SCRATCH" git -C "$STORE" push -q -u origin main
 printf '%s\n' "testowner/teststate" > "$DATA/state-repo"
-# User-scope chain on this machine (stamped hub + @ line in the user's
-# CLAUDE.md), so the healthy-quiet install-check assertions below exercise
-# the full integrity chain end to end.
-sed "s|{{STORE}}|$STORE|g" "$TPL/instructions.md" > "$DATA/CLAUDE.md"
+# User-scope chain on this machine (stamped hub + store symlink + @ line in
+# the user's CLAUDE.md), so the healthy-quiet install-check assertions below
+# exercise the full integrity chain end to end.
+sed "s|{{DATA}}|$DATA|g" "$TPL/instructions.md" > "$DATA/CLAUDE.md"
+ln -s "$STORE/user" "$DATA/user"
 printf '<!-- claude-memory-sync: synced user-scope context -->\n@%s/CLAUDE.md\n' "$DATA" > "$SCRATCH/.claude/CLAUDE.md"
 
 # ---------- 1: adopt a git project ----------
@@ -221,8 +222,9 @@ CUSTOM_STORE="$SCRATCH3/xdg/memstore"   # deliberately not ~/.claude-memory-sync
 mkdir -p "$SCRATCH3/.claude/projects" "$DATA3" "$(dirname "$CUSTOM_STORE")"
 printf '%s\n' "testowner/teststate" > "$DATA3/state-repo"
 printf '%s\n' "$CUSTOM_STORE" > "$DATA3/state-dir"
-# Deliberately stale hub: the sync run below must re-render it with the
-# CUSTOM store path from state-dir, not the default.
+# Deliberately stale hub and NO user symlink yet: the sync run below must
+# re-render the hub and create the symlink pointing at the CUSTOM store
+# from state-dir, not the default.
 printf 'stale hub awaiting re-stamp\n' > "$DATA3/CLAUDE.md"
 printf '@%s/CLAUDE.md\n' "$DATA3" > "$SCRATCH3/.claude/CLAUDE.md"
 env HOME="$SCRATCH3" git clone -q "$REMOTE" "$CUSTOM_STORE"
@@ -236,7 +238,8 @@ M3LINK="$SCRATCH3/.claude/projects/$M3SLUG/memory"
 assert "linked into the custom store" test -L "$M3LINK"
 assert "symlink target is under custom store" sh -c "case \"\$(cd '$M3LINK' && pwd -P)\" in '$CUSTOM_STORE'/*) exit 0;; *) exit 1;; esac"
 assert "default store path never created" test ! -e "$SCRATCH3/.claude-memory-sync"
-assert "hub re-stamped with the custom store path" grep -qF "@$CUSTOM_STORE/user/CLAUDE.md" "$DATA3/CLAUDE.md"
+assert "hub re-stamped with data-dir imports" grep -qF "@$DATA3/user/CLAUDE.md" "$DATA3/CLAUDE.md"
+assert "user symlink created into the custom store" test "$(readlink "$DATA3/user")" = "$CUSTOM_STORE/user"
 assert "install-check quiet for custom-store project" test -z "$(env HOME="$SCRATCH3" CLAUDE_PROJECT_DIR="$M3PROJ" bash "$CHECK" </dev/null)"
 
 # ---------- 15: identical local copy auto-relinks (uninstall→reinstall) ----------
@@ -367,24 +370,32 @@ cp "$MD/ours" "$MD/ours.run"
 env HOME="$SCRATCH" PATH="$STUB:$PATH" bash "$SCRIPTS/claude-merge.sh" "$MD/base" "$MD/ours.run" "$MD/theirs" "memtest.md"
 assert "plausible AI merge accepted" sh -c "grep -q 'ours leading fact' '$MD/ours.run' && grep -q 'theirs trailing fact' '$MD/ours.run' && grep -q 'fact number 8' '$MD/ours.run'"
 
-# ---------- 21: instruction hub stamping ----------
+# ---------- 21: instruction hub stamping + user symlink maintenance ----------
 # The hub is refresh-only: a stale hub (the template changed under a plugin
-# update) is re-rendered with the store path baked in; an absent hub (user
-# scope never enabled on this machine) is never created by the hook.
-echo "== 21: instruction hub stamping =="
+# update) is re-rendered with the data-dir paths baked in; an absent hub
+# (user scope never enabled on this machine) is never created by the hook,
+# and the user symlink follows the same gate. Under the gate, a missing or
+# mistargeted symlink self-heals; a real directory is never replaced.
+echo "== 21: instruction hub stamping + symlink maintenance =="
 printf 'stale hub from an older plugin version\n' > "$DATA/CLAUDE.md"
 run_sync "$PROJ3" pull
-assert "stale hub re-stamped with store imports" grep -qF "@$STORE/user/CLAUDE.md" "$DATA/CLAUDE.md"
-assert "no placeholder left unrendered" sh -c "! grep -q '{{STORE}}' '$DATA/CLAUDE.md'"
+assert "stale hub re-stamped with data-dir imports" grep -qF "@$DATA/user/CLAUDE.md" "$DATA/CLAUDE.md"
+assert "no placeholder left unrendered" sh -c "! grep -q '{{DATA}}' '$DATA/CLAUDE.md'"
 assert "re-stamp logged" grep -q 'instruction hub re-stamped' "$DATA/sync.log"
 HUB_SUM="$(cksum < "$DATA/CLAUDE.md")"
 run_sync "$PROJ3" pull
 assert "re-stamp is content-stable" test "$(cksum < "$DATA/CLAUDE.md")" = "$HUB_SUM"
 assert "no tmp litter" test ! -e "$DATA/CLAUDE.md.tmp"
-rm "$DATA/CLAUDE.md"
+rm "$DATA/CLAUDE.md" "$DATA/user"
 run_sync "$PROJ3" pull
 assert "absent hub not created by the hook" test ! -e "$DATA/CLAUDE.md"
-sed "s|{{STORE}}|$STORE|g" "$TPL/instructions.md" > "$DATA/CLAUDE.md"   # restore
+assert "symlink not created without the hub (gate respected)" test ! -e "$DATA/user"
+sed "s|{{DATA}}|$DATA|g" "$TPL/instructions.md" > "$DATA/CLAUDE.md"   # restore
+run_sync "$PROJ3" pull
+assert "missing symlink self-heals under the gate" test "$(readlink "$DATA/user")" = "$STORE/user"
+ln -sfn "$SCRATCH/somewhere-else" "$DATA/user"
+run_sync "$PROJ3" pull
+assert "mistargeted symlink re-pointed at the store" test "$(readlink "$DATA/user")" = "$STORE/user"
 
 # ---------- 22: user-scope integrity nudges ----------
 # install-check validates the whole import chain and nudges on the first gap;
@@ -405,12 +416,25 @@ mv "$STORE/user" "$SCRATCH/user-aside"               # pre-0.5.0 store: no user/
 run_check "$PROJ3" > "$SCRATCH/out22c"
 assert "missing store user files nudges install" grep -q 'claude-memory-sync:install' "$SCRATCH/out22c"
 mv "$SCRATCH/user-aside" "$STORE/user"
+mv "$DATA/user" "$SCRATCH/link-aside"                # real dir shadows the symlink
+mkdir "$DATA/user"
+printf 'shadow content\n' > "$DATA/user/CLAUDE.md"
+run_check "$PROJ3" > "$SCRATCH/out22d"
+assert "real dir at the symlink path nudges" grep -q 'real directory' "$SCRATCH/out22d"
+run_sync "$PROJ3" pull
+assert "hook leaves the real dir untouched" sh -c "test ! -L '$DATA/user' && grep -q 'shadow content' '$DATA/user/CLAUDE.md'"
+assert "refusal logged" grep -q 'not a symlink' "$DATA/sync.log"
+rm -rf "$DATA/user"
+mv "$SCRATCH/link-aside" "$DATA/user"
 assert "quiet when the chain is fully healthy" test -z "$(run_check "$PROJ3")"
 
 # ---------- 23: user-scope content round-trips ----------
+# Writes go through the $DATA/user symlink — the same path Claude uses when
+# following the stamped instructions — proving write-through-link lands in
+# the store and syncs.
 echo "== 23: user-scope content round-trips =="
-printf -- '- [Round-trip fact](round-trip-fact.md) — global memory test\n' >> "$STORE/user/MEMORY.md"
-printf 'a global fact that must reach every machine\n' > "$STORE/user/round-trip-fact.md"
+printf -- '- [Round-trip fact](round-trip-fact.md) — global memory test\n' >> "$DATA/user/MEMORY.md"
+printf 'a global fact that must reach every machine\n' > "$DATA/user/round-trip-fact.md"
 run_sync "$PROJ3" push
 assert "user-scope change committed and pushed" test "$(env HOME="$SCRATCH" git -C "$STORE" rev-parse HEAD)" = "$(git -C "$REMOTE" rev-parse main)"
 env HOME="$SCRATCH" git -C "$TMP2" pull -q origin main

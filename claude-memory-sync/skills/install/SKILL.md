@@ -38,11 +38,15 @@ installed machine is safe; skip any step whose check passes.
   scripts refuse to touch any repo that doesn't match it.
 - User-scope sync loads through an import chain:
   `~/.claude/CLAUDE.md` → `@$DATA/CLAUDE.md` (the plugin-stamped
-  "instruction hub") → `@<store-dir>/user/CLAUDE.md` +
-  `@<store-dir>/user/MEMORY.md`. The hub is plugin-owned and re-stamped by
-  every sync run (so plugin updates propagate); the single `@` line in the
-  user's own CLAUDE.md is the only thing this skill writes to a user-owned
-  file, and only with consent.
+  "instruction hub") → `@$DATA/user/CLAUDE.md` + `@$DATA/user/MEMORY.md`,
+  where `$DATA/user` is a **symlink** to `<store-dir>/user`. Every import
+  path stays inside `~/.claude` (the import loader scopes by the link path,
+  not the resolved target — the same property the per-project memory
+  symlinks rely on); the store location lives only in the symlink target.
+  The hub and symlink are plugin-owned and re-stamped/healed by every sync
+  run (so plugin updates and store moves propagate); the single `@` line in
+  the user's own CLAUDE.md is the only thing this skill writes to a
+  user-owned file, and only with consent.
 
 ## Step 0: Preconditions
 
@@ -166,16 +170,29 @@ literal `~`). (The `uninstalled` sentinel, if present from a previous
 ## Step 6: Enable user-scope sync
 
 User-scope sync loads the store's `user/` files into every session via the
-import chain described under "How it works". Three sub-steps, all idempotent:
+import chain described under "How it works". Four sub-steps, all idempotent:
 
 1. **Stamp the instruction hub** (plugin-owned; every later sync run
    re-stamps it, so this just covers the gap until then):
 
    ```bash
-   sed "s|{{STORE}}|<store-dir>|g" "${CLAUDE_PLUGIN_ROOT}/templates/instructions.md" > "$DATA/CLAUDE.md"
+   sed "s|{{DATA}}|$DATA|g" "${CLAUDE_PLUGIN_ROOT}/templates/instructions.md" > "$DATA/CLAUDE.md"
    ```
 
-2. **Add the import line to `~/.claude/CLAUDE.md`.** This file is
+2. **Link the data dir into the store.** `$DATA/user` must be a symlink to
+   `<store-dir>/user`; the sync hook maintains it from here on. If a real
+   directory occupies the path (restored or foreign content), stop and
+   reconcile with the user before replacing anything:
+
+   ```bash
+   if [ -e "$DATA/user" ] && [ ! -L "$DATA/user" ]; then
+     echo "reconcile first: $DATA/user is a real directory"
+   else
+     ln -sfn "<store-dir>/user" "$DATA/user"
+   fi
+   ```
+
+3. **Add the import line to `~/.claude/CLAUDE.md`.** This file is
    user-owned — explain what the line does and get consent before editing;
    create the file if it doesn't exist. Skip silently if already present.
    The `@` line must start at column 0:
@@ -185,7 +202,7 @@ import chain described under "How it works". Three sub-steps, all idempotent:
      printf '\n<!-- claude-memory-sync: synced user-scope context -->\n@%s/CLAUDE.md\n' "$DATA" >> ~/.claude/CLAUDE.md
    ```
 
-3. **Migrate existing global content.** If `<store-dir>/user/CLAUDE.md` is
+4. **Migrate existing global content.** If `<store-dir>/user/CLAUDE.md` is
    still the empty skeleton AND the user's `~/.claude/CLAUDE.md` holds
    substantive guidance, this is the first machine to bring user-scope
    content: offer to move the shareable parts into
@@ -204,6 +221,7 @@ git -C <store-dir> config merge.claude-ai.driver  # → current plugin cache pat
 git -C <store-dir> status --short --branch        # clean, tracking origin/main
 ls -la ~/.claude/projects/ | head                 # current project's memory → symlink?
 head -3 "$DATA/CLAUDE.md"                         # hub stamped (paths rendered)?
+readlink "$DATA/user"                             # → <store-dir>/user
 grep -F "@$DATA/CLAUDE.md" ~/.claude/CLAUDE.md    # import line present?
 "${CLAUDE_PLUGIN_ROOT}/scripts/install-check.sh" </dev/null   # silent = fully healthy
 tail -5 "$DATA/sync.log"

@@ -3,8 +3,9 @@
 #
 # Verifies the whole install chain on this machine — base install, store
 # health, the current project's link state, and the user-scope import chain
-# (store user/ files → stamped instruction hub → @ line in the user's own
-# CLAUDE.md) — and prints a one-line nudge for the first gap found.
+# (store user/ files → stamped instruction hub + user/ symlink → @ line in
+# the user's own CLAUDE.md) — and prints a one-line nudge for the first gap
+# found.
 # SessionStart stdout is added to Claude's session context, so the nudge is
 # what prompts Claude to offer /claude-memory-sync:install — nothing is
 # ever changed automatically. The same channel reports a link CONFLICT for
@@ -102,6 +103,12 @@ if [ ! -f "$DIR/user/CLAUDE.md" ] || [ ! -f "$DIR/user/MEMORY.md" ]; then
 fi
 if [ ! -f "$DATA/CLAUDE.md" ]; then
   echo "claude-memory-sync: the store has user-scope files, but this machine's instruction hub ($DATA/CLAUDE.md) is missing, so synced global instructions and memories are not active here. Offer to run /claude-memory-sync:install to finish enabling them (idempotent). If the user declines, drop the subject for the rest of the session."
+  exit 0
+fi
+# A missing or mistargeted $DATA/user symlink self-heals in claude-sync.sh;
+# a real directory in its place is the one state the hook refuses to touch.
+if [ -e "$DATA/user" ] && [ ! -L "$DATA/user" ]; then
+  echo "claude-memory-sync: $DATA/user should be a symlink into the store ($DIR/user) but is a real directory, so synced global instructions and memories may be stale or shadowed. Sync will not touch it. Explain this to the user and offer to reconcile interactively (compare it with $DIR/user, merge anything unique into the store, then replace it with the symlink)."
   exit 0
 fi
 if ! grep -qF "@$DATA/CLAUDE.md" "$HOME/.claude/CLAUDE.md" 2>/dev/null; then
