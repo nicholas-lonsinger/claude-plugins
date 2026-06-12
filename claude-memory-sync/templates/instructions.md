@@ -28,6 +28,14 @@ Pick the destination by who the fact is for and where it applies:
 | Me, this project only | per-project auto-memory — the default for project-specific facts, unchanged |
 | Everyone who works in this repo | the repo's own `CLAUDE.md`, as a normal commit there |
 
+Between the two "every project" rows, default to an indexed memory. Reserve
+the always-load file for guidance that applies to virtually every session or
+whose misses are costly; a rule that fires only in specific situations and is
+tolerable to miss occasionally belongs in the index — even when it must fire
+proactively (nothing at apply time will prompt a lookup). "Proactive" is not
+a reason to always-load; it's a reason to write the index hook line so the
+trigger situation is recognizable.
+
 ## Global memories (user scope)
 
 Global memory files use the same format as per-project auto-memory files
