@@ -25,7 +25,6 @@
           {
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/scripts/claude-sync.sh push",
-            "timeout": 300,
             "statusMessage": "Syncing memory to origin"
           }
         ]
