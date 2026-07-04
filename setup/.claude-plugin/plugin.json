@@ -1,13 +1,13 @@
 {
   "name": "setup",
-  "version": "1.5.0",
-  "description": "Environment setup utilities for Claude Code — status line, hooks, and configuration",
+  "version": "2.0.0",
+  "description": "Environment setup utilities for Claude Code — user defaults and configuration",
   "author": {
     "name": "Nicholas Lonsinger",
     "url": "https://github.com/nicholas-lonsinger"
   },
   "repository": "https://github.com/nicholas-lonsinger/claude-plugins",
   "license": "MIT",
-  "keywords": ["setup", "statusline", "user-defaults", "configuration", "hooks"],
+  "keywords": ["setup", "user-defaults", "configuration"],
   "skills": "./skills/"
 }

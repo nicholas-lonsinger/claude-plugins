@@ -81,7 +81,7 @@ window_size=$(echo "$input" | jq -r '.context_window.context_window_size // "nul
 
 if [ "$used_pct" = "null" ] || [ "$window_size" = "null" ]; then
     context_info="0% ↑0K ↓0K / 0K"
-elif ! [[ "$used_pct" =~ ^[0-9]+$ ]] || ! [[ "$window_size" =~ ^[0-9]+$ ]]; then
+elif ! [[ "$used_pct" =~ ^[0-9]+([.][0-9]+)?$ ]] || ! [[ "$window_size" =~ ^[0-9]+$ ]]; then
     context_info="ERROR"
 else
     fmt_tokens() {

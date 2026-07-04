@@ -26,10 +26,17 @@ Environment setup utilities for Claude Code.
 
 | Skill | Command | Description |
 |-------|---------|-------------|
-| statusline | `/setup:statusline` | Install a custom status line with git info, context window usage, and rate limit monitoring |
 | user-defaults | `/setup:user-defaults` | Configure `~/.claude/settings.json` and `~/.claude/CLAUDE.md` with default user settings — plugins, marketplace, preferences, and coding guidelines |
 
-#### Status Line Features
+### statusline
+
+Self-configuring status line for Claude Code. **No command to run — enabling the plugin
+is the entire install.** A session-start hook writes the `statusLine` entry into
+`~/.claude/settings.json` (only if you don't already have one) and keeps the render script
+symlinked to the current plugin version, so updates apply automatically. Disable the plugin
+to turn it off.
+
+**Features:**
 
 - Model name and output style
 - Git branch with worktree detection, dirty/untracked flags, and ahead/behind tracking
