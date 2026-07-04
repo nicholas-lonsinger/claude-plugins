@@ -13,20 +13,10 @@ Add this marketplace to Claude Code:
 Then install individual plugins:
 
 ```
-/plugin install setup@nicholas-lonsinger-plugins
+/plugin install issues@nicholas-lonsinger-plugins
 ```
 
 ## Available Plugins
-
-### setup
-
-Environment setup utilities for Claude Code.
-
-**Skills:**
-
-| Skill | Command | Description |
-|-------|---------|-------------|
-| user-defaults | `/setup:user-defaults` | Configure `~/.claude/settings.json` and `~/.claude/CLAUDE.md` with default user settings — plugins, marketplace, preferences, and coding guidelines |
 
 ### statusline
 
@@ -81,7 +71,7 @@ needing attention (broken store, missing import line, memory conflicts).
 
 ## Adding Plugins
 
-Each plugin lives in its own subdirectory with a `.claude-plugin/plugin.json` manifest. See the `setup/` directory for an example of the expected structure.
+Each plugin lives in its own subdirectory with a `.claude-plugin/plugin.json` manifest. See the `issues/` directory for an example of the expected structure.
 
 ## License
 

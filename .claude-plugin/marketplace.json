@@ -8,12 +8,6 @@
   },
   "plugins": [
     {
-      "name": "setup",
-      "description": "Environment setup utilities for Claude Code — user defaults and configuration",
-      "source": "./setup",
-      "version": "2.0.0"
-    },
-    {
       "name": "statusline",
       "description": "Self-configuring Claude Code status line — git info, context window, and rate-limit monitoring",
       "source": "./statusline",
