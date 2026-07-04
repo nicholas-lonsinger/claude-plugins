@@ -11,7 +11,7 @@
       "name": "statusline",
       "description": "Self-configuring Claude Code status line — model/effort, git & PR status, context window, session churn, and rate-limit monitoring",
       "source": "./statusline",
-      "version": "1.1.0"
+      "version": "1.1.1"
     },
     {
       "name": "issues",

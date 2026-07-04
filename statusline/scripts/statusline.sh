@@ -202,7 +202,7 @@ fi
 # --- Output: join non-empty segments with " | " ---
 segments=("🤖 $model_section" "$git_icon $git_section")
 [ -n "$pr_section" ] && segments+=("$pr_section")
-[ -n "$lines_section" ] && segments+=("📝 $lines_section")
+[ -n "$lines_section" ] && segments+=("📓 $lines_section")
 segments+=("💭 $context_info")
 [ -n "$rate_section" ] && segments+=("$rate_section")
 
