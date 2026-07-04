@@ -3,8 +3,15 @@
 # Read JSON session data from stdin
 input=$(cat)
 
-# --- Model ---
+# --- Model + effort ---
 model_name=$(echo "$input" | jq -r '.model.display_name // "ERROR"' | sed 's/ ([^)]*context)$//')
+# effort.level is low|medium|high|xhigh|max, reflects live /effort changes; absent if the model has no effort param
+effort=$(echo "$input" | jq -r '.effort.level // empty')
+if [ -n "$effort" ]; then
+    model_section="$model_name ($effort)"
+else
+    model_section="$model_name"
+fi
 
 # --- Git Info (cached) ---
 cwd=$(echo "$input" | jq -r '.workspace.current_dir // ""')
@@ -74,6 +81,18 @@ else
 fi
 
 # --- Context Window ---
+# Fixed-threshold coloring (context just fills up — no pace/reset window like rate limits)
+color_context_pct() {
+    local pct=$1
+    if [ "$pct" -ge 90 ]; then
+        printf '\033[31m%s%%\033[0m' "$pct"   # red: window nearly full
+    elif [ "$pct" -ge 70 ]; then
+        printf '\033[33m%s%%\033[0m' "$pct"   # yellow: filling up
+    else
+        printf '%s%%' "$pct"
+    fi
+}
+
 used_pct=$(echo "$input" | jq -r '.context_window.used_percentage // "null"')
 input_tokens=$(echo "$input" | jq -r '.context_window.total_input_tokens // 0')
 output_tokens=$(echo "$input" | jq -r '.context_window.total_output_tokens // 0')
@@ -90,7 +109,8 @@ else
     input_fmt=$(fmt_tokens "$input_tokens")
     output_fmt=$(fmt_tokens "$output_tokens")
     window_fmt=$(fmt_tokens "$window_size")
-    context_info=$(printf "%.0f%% ↑%s ↓%s / %s" "$used_pct" "$input_fmt" "$output_fmt" "$window_fmt")
+    pct_int=$(printf "%.0f" "$used_pct")
+    context_info=$(printf "%s ↑%s ↓%s / %s" "$(color_context_pct "$pct_int")" "$input_fmt" "$output_fmt" "$window_fmt")
 fi
 
 # --- Rate Limits ---
@@ -156,9 +176,38 @@ if [ -n "$five_hour_pct" ]; then
     rate_section=$(printf '🔋 5h: %s %s · 7d: %s %s' "$five_color" "$five_countdown" "$seven_color" "$seven_countdown")
 fi
 
-# --- Output ---
-if [ -n "$rate_section" ]; then
-    printf "🤖 %s | %s %s | 💭 %s | %s" "$model_name" "$git_icon" "$git_section" "$context_info" "$rate_section"
-else
-    printf "🤖 %s | %s %s | 💭 %s" "$model_name" "$git_icon" "$git_section" "$context_info"
+# --- Session churn (lines added/removed this session) ---
+lines_added=$(echo "$input" | jq -r '.cost.total_lines_added // 0')
+lines_removed=$(echo "$input" | jq -r '.cost.total_lines_removed // 0')
+lines_section=""
+if [ "$lines_added" != "0" ] || [ "$lines_removed" != "0" ]; then
+    lines_section=$(printf '\033[32m+%s\033[0m \033[31m-%s\033[0m' "$lines_added" "$lines_removed")
 fi
+
+# --- Open PR for the current branch (mirrors the footer PR badge) ---
+pr_number=$(echo "$input" | jq -r '.pr.number // empty')
+pr_state=$(echo "$input" | jq -r '.pr.review_state // empty')
+pr_section=""
+if [ -n "$pr_number" ]; then
+    case "$pr_state" in
+        approved)          pr_glyph=$(printf ' \033[32m✓\033[0m') ;;   # green check
+        changes_requested) pr_glyph=$(printf ' \033[31m✗\033[0m') ;;   # red x
+        pending)           pr_glyph=$(printf ' \033[33m●\033[0m') ;;   # yellow dot: review pending
+        draft)             pr_glyph=' ◌' ;;                            # hollow: draft
+        *)                 pr_glyph='' ;;                              # unknown/absent review state
+    esac
+    pr_section="🔀 #${pr_number}${pr_glyph}"
+fi
+
+# --- Output: join non-empty segments with " | " ---
+segments=("🤖 $model_section" "$git_icon $git_section")
+[ -n "$pr_section" ] && segments+=("$pr_section")
+[ -n "$lines_section" ] && segments+=("📝 $lines_section")
+segments+=("💭 $context_info")
+[ -n "$rate_section" ] && segments+=("$rate_section")
+
+line=""
+for seg in "${segments[@]}"; do
+    if [ -z "$line" ]; then line="$seg"; else line="$line | $seg"; fi
+done
+printf '%s' "$line"

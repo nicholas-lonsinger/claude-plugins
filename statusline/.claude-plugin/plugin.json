@@ -1,12 +1,12 @@
 {
   "name": "statusline",
-  "version": "1.0.0",
-  "description": "Self-configuring Claude Code status line — git info, context window, and rate-limit monitoring",
+  "version": "1.1.0",
+  "description": "Self-configuring Claude Code status line — model/effort, git & PR status, context window, session churn, and rate-limit monitoring",
   "author": {
     "name": "Nicholas Lonsinger",
     "url": "https://github.com/nicholas-lonsinger"
   },
   "repository": "https://github.com/nicholas-lonsinger/claude-plugins",
   "license": "MIT",
-  "keywords": ["statusline", "status-line", "git", "context-window", "rate-limits", "hooks"]
+  "keywords": ["statusline", "status-line", "git", "context-window", "rate-limits", "effort", "pull-request", "hooks"]
 }

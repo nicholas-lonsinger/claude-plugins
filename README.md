@@ -28,9 +28,11 @@ to turn it off.
 
 **Features:**
 
-- Model name and output style
+- Model name with the current reasoning effort level (e.g. `Opus 4.8 (xhigh)`), reflecting live `/effort` changes
 - Git branch with worktree detection, dirty/untracked flags, and ahead/behind tracking
-- Context window usage percentage with input/output token counts
+- Open pull request for the branch with review state (approved / changes requested / pending / draft)
+- Context window usage percentage — color-coded yellow→red as the window fills — with input/output token counts
+- Session code churn (lines added/removed)
 - Rate limit monitoring for 5-hour and 7-day windows with pace-based color coding
 
 **Requirements:** `jq`, `git`, macOS or Linux
