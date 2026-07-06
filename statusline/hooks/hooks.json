@@ -6,8 +6,8 @@
           {
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/scripts/statusline-setup.sh",
-            "timeout": 10,
-            "statusMessage": "Configuring status line"
+            "statusMessage": "Configuring status line",
+            "async": true
           }
         ]
       }
@@ -17,7 +17,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/statusline-cleanup.sh"
+            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/statusline-cleanup.sh",
+            "async": true
           }
         ]
       }
