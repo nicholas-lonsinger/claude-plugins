@@ -44,7 +44,7 @@ Give it a self-contained prompt containing the issue number, the `createdAt` dat
 >
 > 1. **Verify the problem still exists at HEAD.** Fetch the issue (`gh issue view <NUMBER> --json title,body,labels,comments,createdAt`). Read every file and code path it references and confirm the described behavior is actually present in the current code — don't take the issue's word for it. Referenced lines or symbols may have moved or been rewritten; find their current equivalents.
 > 2. **Check what changed since filing.** Use `git log --oneline --since="<createdAt>" -- <relevant paths>` to see whether the referenced code has been touched since the issue was written. Recent commits to those paths are a strong signal the issue may be partially or fully addressed, or that its framing is outdated.
-> 3. **Treat any proposed solution as a suggestion, not an instruction.** Whatever fix the issue body or comments propose was reasonable *then*; determine the best fix *now*, based on the current state of the code and project conventions. If the issue comments contain a section titled "## Implementation Plan", it was reviewed and approved by the user — give it more weight than suggestions in the issue body, but it is still a snapshot: verify each step against the current code and revise where the code has moved on.
+> 3. **Treat any proposed solution as a suggestion, not an instruction.** Whatever fix the issue body or comments propose was reasonable *then*; determine the best fix *now*, based on the current state of the code and project conventions.
 > 4. **You are empowered to recommend not fixing.** Concluding the issue should be closed is a successful outcome, not a failure.
 >
 > Return exactly this structure:
@@ -52,7 +52,7 @@ Give it a self-contained prompt containing the issue number, the `createdAt` dat
 > VERDICT: fix | already-fixed | stale | not-worth-fixing
 > REASONING: <why, citing specific files/commits — for close verdicts this becomes the issue comment>
 > PLAN: <only for "fix": step-by-step implementation plan with file paths, what to change and why, edge cases to handle, and how to test>
-> DEVIATIONS: <only for "fix": where the plan differs from what the issue or an approved plan proposed, and why>
+> DEVIATIONS: <only for "fix": where the plan differs from what the issue proposed, and why>
 > ```
 
 ## Step 3: Act on the Verdict
@@ -113,7 +113,7 @@ Return: `STATUS: blocked | REASON: <brief reason>`
    ```
    git push -u origin <branch-name>
    ```
-   Create the PR with `gh pr create`. Include the appropriate issue-closing keyword in the PR body so the issue auto-closes on merge (per project merge conventions). If the fix diverged from what the issue or an approved plan proposed, explain the deviation in the PR body (use the planner's `DEVIATIONS` section).
+   Create the PR with `gh pr create`. Include the appropriate issue-closing keyword in the PR body so the issue auto-closes on merge (per project merge conventions). If the fix diverged from what the issue proposed, explain the deviation in the PR body (use the planner's `DEVIATIONS` section).
 
 ## Step 9: Code Review
 

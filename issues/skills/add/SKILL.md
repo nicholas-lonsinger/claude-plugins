@@ -1,8 +1,18 @@
 ---
 name: add
 description: Create a well-researched GitHub issue with codebase context, dependency analysis, and structured formatting
+argument-hint: "<issue description — a phrase is enough; omit to be prompted>"
 disable-model-invocation: true
-allowed-tools: Read, Edit, Write, Bash, Glob, Grep, Agent, AskUserQuestion, WebFetch
+allowed-tools:
+  - Read
+  - Edit
+  - Write
+  - Bash
+  - Glob
+  - Grep
+  - Task
+  - AskUserQuestion
+  - WebFetch
 ---
 
 # Add GitHub Issue
@@ -18,50 +28,61 @@ Check whether the user provided a description when invoking this skill (as argum
 
 Store this description — it drives all subsequent steps.
 
-## Step 2: Investigate the codebase
+## Step 2: Assess the ask — minimal or detailed?
+
+Decide which mode you are in. The test: after reading the description, could you write an issue where a competent implementer would know **what** to change, roughly **where**, and what **done** looks like?
+
+- **Detailed ask** — the description names a concrete problem or behavior with enough scope to act on. Do NOT interrogate the user before drafting. Research (Steps 3–4), then go straight to the draft (Step 6), bundling any genuinely blocking questions alongside it.
+- **Minimal ask** — a phrase, a hunch, an unshaped idea ("we should do something about the config sprawl"). The user is asking you to help **shape the ask**, not just transcribe it. Research first (Steps 3–4) so your questions are informed, then run the shaping round (Step 5) before drafting.
+
+When in doubt, treat it as minimal — the user would rather be asked a good question than receive a confidently wrong issue.
+
+## Step 3: Investigate the codebase
 
 Before drafting the issue, build context about the project's current state. Do all of the following:
 
 1. **Read project guidelines** — read `CLAUDE.md` at the repo root and any other convention/contributing files (e.g., `CONTRIBUTING.md`, `.github/ISSUE_TEMPLATE/`). These may contain issue formatting rules you must follow.
-2. **Explore relevant code** — use the Agent tool (subagent_type: Explore) to investigate the areas of the codebase most relevant to the issue description. Understand the current implementation, architecture, and any constraints. Keep the exploration focused — you are gathering context, not doing a full audit.
+2. **Explore relevant code** — use the Task tool (subagent_type: Explore) to investigate the areas of the codebase most relevant to the issue description. Understand the current implementation, architecture, and any constraints. Keep the exploration focused — you are gathering context, not doing a full audit.
 3. **Identify the repo** — run `gh repo view --json owner,name -q '.owner.login + "/" + .name'` to get the owner/repo for later API calls.
 
-## Step 3: Fetch open GitHub issues
+## Step 4: Scan open GitHub issues
 
-Download the open issues from the repository to understand the existing issue landscape:
+Fetch the open issues **without bodies** — titles and labels are enough for a first pass:
 
 ```bash
-gh issue list --state open --limit 100 --json number,title,labels,body
+gh issue list --state open --limit 200 --json number,title,labels
 ```
 
-Analyze the results to identify:
-- **Duplicates** — does an issue already exist that covers this request? If so, tell the user and ask how they want to proceed.
-- **Dependencies** — are there open issues that this new issue depends on, or that depend on what this issue would change?
-- **Related work** — are there issues covering adjacent areas that should be cross-referenced?
+Scan the titles for:
+- **Duplicate candidates** — issues that might already cover this request
+- **Dependency candidates** — issues this new issue might depend on, or that depend on what it would change
+- **Related work** — issues covering adjacent areas worth cross-referencing
 
-Keep note of any issue numbers you will reference in the new issue body.
+Only for the handful of candidates you identified, fetch the full body to confirm:
 
-## Step 4: Ask qualifying questions (round 1)
+```bash
+gh issue view <number> --json number,title,body,labels
+```
 
-Based on what you learned from the codebase and existing issues, ask the user targeted qualifying questions to fill in gaps. Questions should help you understand:
+If a genuine duplicate exists, tell the user and ask how they want to proceed. Keep note of any issue numbers you will reference in the new issue body.
+
+## Step 5: Shape the ask (minimal asks only)
+
+Skip this step entirely for detailed asks.
+
+For minimal asks, help the user turn the idea into a well-formed request. Ask targeted questions **informed by what you found in Steps 3–4** — never generic ones. Aim to pin down:
 
 - Scope and acceptance criteria
 - Priority and urgency
-- Any technical constraints or preferences
 - Whether this is a feature, bug fix, research task, or something else
 - Specific files, modules, or behaviors involved
+- Any technical constraints or preferences
 
-Ask all round-1 questions in a single message. Wait for the user's response.
-
-## Step 5: Follow-up questions (round 2 — optional)
-
-If the user's answers in round 1 raised new questions or left ambiguity, ask **one** follow-up round of clarifying questions. Keep this round short and focused.
-
-If round 1 answers were sufficiently clear, skip this step and move to Step 6.
+Use AskUserQuestion when the realistic answers are enumerable (you can offer concrete options grounded in the code); ask free-form otherwise. Ask everything in a single round. If the answers raise new ambiguity, ask **one** short follow-up round — no more.
 
 ## Step 6: Draft and present the issue
 
-Compose the full GitHub issue following any formatting rules found in project guidelines (Step 2). If no project-specific template exists, use this default structure:
+Compose the full GitHub issue following any formatting rules found in project guidelines (Step 3). If no project-specific template exists, use this default structure:
 
 ```markdown
 ## Summary
@@ -85,17 +106,15 @@ Compose the full GitHub issue following any formatting rules found in project gu
 < technical notes, constraints, design considerations — omit section if none >
 ```
 
-Present the full draft to the user and ask for their approval. If they request changes, apply them and re-present until approved.
+Present the full draft to the user and ask for their approval. For detailed asks, this is also where any blocking questions go — present them **with** the draft ("here's the issue; I assumed X, flag if wrong") rather than as a gate before it. If the user requests changes, apply them and re-present until approved.
 
 ## Step 7: Post the issue
 
-Once the user approves, create the issue using `gh`:
+Once the user approves, write the body to a temporary file with the Write tool (avoids heredoc escaping issues), then create the issue:
 
 ```bash
-gh issue create --title "<title>" --body "$(cat <<'EOF'
-<approved issue body>
-EOF
-)"
+gh issue create --title "<title>" --body-file <temp-file-path>
+rm <temp-file-path>
 ```
 
 **Research issues**: if the issue is a research task (the user indicated it, or the nature of the work is investigative — exploring options, evaluating approaches, producing recommendations rather than code changes), add the `research` label:
@@ -116,5 +135,5 @@ After posting, display the issue URL to the user.
 
 Ask the user if they would like to create another issue.
 
-- **If yes**: go back to Step 1 (retain codebase context from Step 2 — no need to re-explore unless the new issue covers a different area).
+- **If yes**: go back to Step 1 (retain codebase context from Step 3 — no need to re-explore unless the new issue covers a different area).
 - **If no**: thank the user and end.
