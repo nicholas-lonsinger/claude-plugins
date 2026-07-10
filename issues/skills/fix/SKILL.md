@@ -14,7 +14,7 @@ allowed-tools:
 
 # Fix GitHub Issue(s) — Orchestrator
 
-You are an orchestrator that coordinates issue-fixing agents. You select issues, launch an `issue-fixer` agent for each one, run PR reviews between phases, and manage the serial workflow.
+You are an orchestrator that coordinates issue-fixing agents. You select issues, launch an `issue-fixer` agent for each one, and manage the serial workflow. Each agent handles its issue end-to-end: an Opus planning subagent verifies the issue still applies and designs the fix, then the agent implements it, creates a PR, runs `/code-review medium --fix`, and merges.
 
 ## Input
 
@@ -22,7 +22,9 @@ $ARGUMENTS
 
 ## Agent Model
 
-By default, launch **both** the `issue-fixer-phase1` and `issue-fixer-phase2` agents with `model: "sonnet"`. If the user explicitly requests a different model (e.g., "use opus for the agents"), use that model instead. This keeps the orchestrator on whatever model it was invoked with while the worker agents default to Sonnet for cost efficiency.
+By default, launch the `issue-fixer` agent with `model: "sonnet"` and no effort override (it inherits the session's effort level). If the user explicitly requests a different model (e.g., "use opus for the agents"), use that model instead. This keeps the orchestrator on whatever model it was invoked with while the implementing agent defaults to Sonnet for cost efficiency.
+
+Internally, the agent pins its planning subagent to Opus — planning and issue-verification judgment get the stronger model while implementation stays on Sonnet. A user model override changes the implementing agent, not the planner.
 
 ## Setup
 
@@ -48,53 +50,27 @@ gh api user -q .login
 
 ## Per-Issue Workflow
 
-### Step 1: Launch the Phase 1 Agent
+### Step 1: Launch the Issue-Fixer Agent
 
-Launch the `issue-fixer-phase1` agent in the foreground with `model: "sonnet"` (or the user-specified model) and the issue number and GitHub username. **Do not use `isolation: "worktree"`** — the agent works in the main repo tree, creates a branch in-place, and Phase 2 continues on that same branch without needing to check it out again.
+Launch the `issue-fixer` agent in the foreground with `model: "sonnet"` (or the user-specified model) and the issue number and GitHub username. **Do not use `isolation: "worktree"`** — the agent works in the main repo tree and creates its branch in-place.
 
 ```
 Fix GitHub issue #<NUMBER>.
 GitHub username for assigning issues: <GITHUB_USERNAME>
 ```
 
-Wait for the agent to complete.
+Wait for the agent to complete. The agent has its Opus planner verify the issue still applies and design the fix, implements it, creates a PR, runs `/code-review medium --fix`, addresses PR comments, and merges.
 
-### Step 2: Handle Phase 1 Result
+### Step 2: Handle the Result
 
 Based on the agent's return status:
 
-- **`closed-completed`** or **`closed-not-planned`** — Issue was already resolved or not applicable. Skip to next issue.
-- **`research`** — Issue was research-only. Agent posted findings and assigned to user. Skip to next issue.
-- **`blocked`** — Agent could not complete the fix. Log the reason. Skip to next issue.
-- **`pr-created`** — A PR was created. Proceed to Step 3.
+- **`closed-completed`** or **`closed-not-planned`** — Issue was already resolved, stale, or judged not worth fixing. The agent posted its reasoning on the issue. Record the outcome and move to the next issue.
+- **`research`** — Issue was research-only. Agent posted findings and assigned to user. Move to the next issue.
+- **`blocked`** — Agent could not complete the fix. Log the reason. Move to the next issue.
+- **`merged`** — PR was created, reviewed, and merged. Record success.
 
-### Step 3: Run PR Review
-
-Run the full PR review toolkit on the created PR:
-
-```
-/review
-```
-
-Collect the review findings (critical issues, important issues, suggestions).
-
-### Step 4: Launch the Phase 2 Agent with Review Findings
-
-Launch an `issue-fixer-phase2` agent in the foreground with `model: "sonnet"` (or the user-specified model). **Do not use `isolation: "worktree"`** — the branch already exists in the main repo tree from Phase 1.
-
-Include in the prompt:
-- The issue number and GitHub username
-- PR number, branch name, and the Phase 1 summary of what the PR does
-- The full review findings
-
-Wait for the agent to complete Phase 2.
-
-### Step 5: Handle Phase 2 Result
-
-- **`merged`** — PR was successfully merged. Record success.
-- **`blocked`** — Agent could not complete. Log the reason.
-
-### Step 6: Compact and Loop (if processing multiple issues)
+### Step 3: Compact and Loop (if processing multiple issues)
 
 Before looping to the next issue, run `/compact` to free up context window space:
 
@@ -115,6 +91,7 @@ After all issues are processed (or no eligible issues remain), report a summary:
 |-------|--------|----|-------|
 | #12   | merged | #45 | Fixed feed parsing bug |
 | #15   | closed | —  | Already fixed in recent commit |
+| #17   | closed | — | Stale — code it referenced was removed |
 | #18   | blocked | — | Needs clarification on expected behavior |
 | #20   | research | — | Posted analysis and assigned to user |
 ```
@@ -124,4 +101,5 @@ After all issues are processed (or no eligible issues remain), report a summary:
 - Process issues **one at a time**, serially. Do not launch multiple agents in parallel.
 - Always re-fetch issues between iterations — the list may have changed.
 - Respect issue dependencies. Do not process an issue that is blocked by another open issue.
+- An agent closing an issue as stale or not worth fixing is a valid, successful outcome — do not re-open or retry it.
 - If a fix requires changes that are too large or risky, the agent will comment and assign back. Do not override this.
