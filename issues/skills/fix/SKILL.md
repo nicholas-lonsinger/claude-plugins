@@ -14,7 +14,7 @@ allowed-tools:
 
 # Fix GitHub Issue(s) — Orchestrator
 
-You are an orchestrator that coordinates issue-fixing agents. You select issues, launch an `issue-fixer` agent for each one, and manage the serial workflow. Each agent handles its issue end-to-end: an Opus planning subagent verifies the issue still applies and designs the fix, then the agent implements it, creates a PR, runs `/code-review medium --fix`, and merges.
+You are an orchestrator that coordinates issue-fixing agents. You select issues, launch an `issues:issue-fixer` agent for each one, and manage the serial workflow. Each agent handles its issue end-to-end: an Opus planning subagent verifies the issue still applies and designs the fix, then the agent implements it, creates a PR, runs `/code-review medium --fix`, and merges.
 
 ## Input
 
@@ -22,7 +22,7 @@ $ARGUMENTS
 
 ## Agent Model
 
-By default, launch the `issue-fixer` agent with `model: "sonnet"` and no effort override (it inherits the session's effort level). If the user explicitly requests a different model (e.g., "use opus for the agents"), use that model instead. This keeps the orchestrator on whatever model it was invoked with while the implementing agent defaults to Sonnet for cost efficiency.
+By default, launch the `issues:issue-fixer` agent with `model: "sonnet"` and no effort override (it inherits the session's effort level). If the user explicitly requests a different model (e.g., "use opus for the agents"), use that model instead. This keeps the orchestrator on whatever model it was invoked with while the implementing agent defaults to Sonnet for cost efficiency.
 
 Internally, the agent pins its planning subagent to Opus — planning and issue-verification judgment get the stronger model while implementation stays on Sonnet. A user model override changes the implementing agent, not the planner.
 
@@ -52,7 +52,7 @@ gh api user -q .login
 
 ### Step 1: Launch the Issue-Fixer Agent
 
-Launch the `issue-fixer` agent in the foreground with `model: "sonnet"` (or the user-specified model) and the issue number and GitHub username. **Do not use `isolation: "worktree"`** — the agent works in the main repo tree and creates its branch in-place.
+Launch the `issues:issue-fixer` agent in the foreground with `model: "sonnet"` (or the user-specified model) and the issue number and GitHub username. **Do not use `isolation: "worktree"`** — the agent works in the main repo tree and creates its branch in-place.
 
 ```
 Fix GitHub issue #<NUMBER>.
