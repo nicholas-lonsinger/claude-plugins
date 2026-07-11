@@ -14,7 +14,9 @@ jobs:
         run: tools/sync-vendored.sh --check
       - name: Shell syntax
         run: git ls-files '*.sh' | xargs -n1 bash -n
-      - name: Shellcheck (scoped to scripts with CI coverage)
-        # Scoped to the files maintained against shellcheck; widen as the
-        # older plugin scripts are brought up to warning-free.
-        run: shellcheck github/scripts/*.sh issues/scripts/wait-for-ci.sh tools/*.sh
+      - name: Shellcheck (all tracked scripts; project directives in .shellcheckrc)
+        run: git ls-files '*.sh' | xargs shellcheck
+      - name: JSON manifests parse
+        run: git ls-files '*.json' | xargs -n1 jq empty
+      - name: claude-memory-sync test harness
+        run: bash claude-memory-sync/tests/memtest.sh

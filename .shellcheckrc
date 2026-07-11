@@ -1,0 +1,6 @@
+# Follow `. "$SCRIPT_DIR/lib-link.sh"`-style sources so cross-file usage is
+# analyzed (variables set by a sourcing script and consumed by the library
+# would otherwise flag SC2034/SC1091). SCRIPTDIR resolves the sourced path
+# relative to the sourcing script rather than the invocation cwd.
+external-sources=true
+source-path=SCRIPTDIR

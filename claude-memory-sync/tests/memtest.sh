@@ -11,7 +11,18 @@ TPL="$WT/claude-memory-sync/templates"
 SYNC="$SCRIPTS/claude-sync.sh"
 CHECK="$SCRIPTS/install-check.sh"
 
-SCRATCH="$(mktemp -d /private/tmp/memsync-test.XXXXXX)"
+# mktemp + symlink-resolve: macOS's /tmp and $TMPDIR live behind symlinks
+# (/private/…), and several assertions compare literal $SCRATCH-built paths
+# against `pwd -P` output — resolving here keeps both spellings identical.
+# ${TMPDIR:-/tmp} (not a hardcoded /private/tmp) keeps the harness runnable
+# on Linux CI.
+scratch_dir() {
+  local d
+  d="$(mktemp -d "${TMPDIR:-/tmp}/$1.XXXXXX")"
+  (cd "$d" && pwd -P)
+}
+
+SCRATCH="$(scratch_dir memsync-test)"
 STORE="$SCRATCH/.claude-memory-sync"
 PROJECTS="$SCRATCH/.claude/projects"
 DATA="$SCRATCH/.claude/plugins/data/claude-memory-sync-nicholas-lonsinger-plugins"
@@ -101,16 +112,17 @@ P2SLUG="$(slug "$PROJ2")"
 run_sync "$PROJ2" pull
 assert "second clone slug linked" test -L "$PROJECTS/$P2SLUG/memory"
 assert "links to the SAME store dir" test "$(cd "$PROJECTS/$P2SLUG/memory" && pwd -P)" = "$(cd "$SDIR" && pwd -P)"
-assert "no duplicate store dir" test "$(ls "$STORE/memory" | wc -l | tr -d ' ')" = "1"
+assert "no duplicate store dir" test "$(find "$STORE/memory" -mindepth 1 -maxdepth 1 | wc -l | tr -d ' ')" = "1"
 
 # ---------- 4: worktree resolves to main root ----------
 echo "== 4: worktree unification =="
-( cd "$PROJ" && git commit -q --allow-empty -m base && git worktree add -q ../kernova-sim-wt -b tbranch )
+# commit identity comes from the scratch .gitconfig — CI runners have none
+( cd "$PROJ" && env HOME="$SCRATCH" git commit -q --allow-empty -m base && git worktree add -q ../kernova-sim-wt -b tbranch )
 run_sync "$SCRATCH/dev/kernova-sim-wt" push
 WSLUG="$(slug "$SCRATCH/dev/kernova-sim-wt")"
 assert "no link created at worktree slug" test ! -e "$PROJECTS/$WSLUG/memory"
 assert "main slug still linked" test -L "$PROJECTS/$PSLUG/memory"
-assert "still a single store dir" test "$(ls "$STORE/memory" | wc -l | tr -d ' ')" = "1"
+assert "still a single store dir" test "$(find "$STORE/memory" -mindepth 1 -maxdepth 1 | wc -l | tr -d ' ')" = "1"
 
 # ---------- 5: non-git project ----------
 echo "== 5: non-git project =="
@@ -159,9 +171,9 @@ assert "relinked after conflict cleared" test -L "$PROJECTS/$PSLUG/memory"
 
 # ---------- 9: self-reference guard ----------
 echo "== 9: self-reference guard =="
-COUNT_BEFORE="$(ls "$STORE/memory" | wc -l | tr -d ' ')"
+COUNT_BEFORE="$(find "$STORE/memory" -mindepth 1 -maxdepth 1 | wc -l | tr -d ' ')"
 run_sync "$STORE" push
-assert "no store dir for the store itself" test "$(ls "$STORE/memory" | wc -l | tr -d ' ')" = "$COUNT_BEFORE"
+assert "no store dir for the store itself" test "$(find "$STORE/memory" -mindepth 1 -maxdepth 1 | wc -l | tr -d ' ')" = "$COUNT_BEFORE"
 
 # ---------- 10: stdin-JSON cwd fallback ----------
 echo "== 10: stdin cwd fallback =="
@@ -177,7 +189,7 @@ assert "store dir exists for stdin project" test -d "$STORE/memory/$P3SLUG"
 
 # ---------- 11: new-machine simulation ----------
 echo "== 11: new machine =="
-SCRATCH2="$(mktemp -d /private/tmp/memsync-test2.XXXXXX)"
+SCRATCH2="$(scratch_dir memsync-test2)"
 cp "$SCRATCH/.gitconfig" "$SCRATCH2/.gitconfig"
 DATA2="$SCRATCH2/.claude/plugins/data/claude-memory-sync-nicholas-lonsinger-plugins"
 mkdir -p "$SCRATCH2/.claude/projects" "$DATA2"
@@ -215,7 +227,7 @@ assert "no output for healthy linked project" test -z "$OUT"
 # an arbitrary path named by $DATA/state-dir, and the default
 # ~/.claude-memory-sync is never created or consulted.
 echo "== 14: custom store path =="
-SCRATCH3="$(mktemp -d /private/tmp/memsync-test3.XXXXXX)"
+SCRATCH3="$(scratch_dir memsync-test3)"
 cp "$SCRATCH/.gitconfig" "$SCRATCH3/.gitconfig"
 DATA3="$SCRATCH3/.claude/plugins/data/claude-memory-sync-nicholas-lonsinger-plugins"
 CUSTOM_STORE="$SCRATCH3/xdg/memstore"   # deliberately not ~/.claude-memory-sync
