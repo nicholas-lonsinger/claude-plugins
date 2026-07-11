@@ -1,0 +1,13 @@
+{
+  "name": "github",
+  "version": "0.1.0",
+  "description": "GitHub workflow utilities for Claude Code — verified wait-for-green on pull request CI",
+  "author": {
+    "name": "Nicholas Lonsinger",
+    "url": "https://github.com/nicholas-lonsinger"
+  },
+  "repository": "https://github.com/nicholas-lonsinger/claude-plugins",
+  "license": "MIT",
+  "keywords": ["github", "ci", "checks", "pull-request", "merge", "wait-ci"],
+  "skills": "./skills/"
+}

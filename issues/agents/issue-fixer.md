@@ -20,6 +20,7 @@ You will receive a message containing:
 - **Issue number** to fix
 - **GitHub username** of the repo owner (for assigning issues back)
 - **Merge mode** — `merge` (merge the PR after a clean review) or `pr-only` (leave the PR open for the user). If absent, default to `pr-only`.
+- **CI wait script** (optional) — absolute path to the plugin's `wait-for-ci.sh`, used in merge mode. If absent, resolve the vendored copy shipped with this plugin: `ls ~/.claude/plugins/cache/*/issues/*/scripts/wait-for-ci.sh 2>/dev/null | sort -V | tail -1`
 
 ## Turn Discipline — You Are a Subagent
 
@@ -155,16 +156,24 @@ Then, after a successful review:
 
 **In `pr-only` mode, skip the merge entirely.** Do not run `gh pr merge`. Check out the default branch (leave the PR branch intact — it backs the open PR), verify the working tree is clean, and go to Step 12.
 
-**In `merge` mode**, first wait for the PR's required checks to pass, then merge following the project's merge conventions.
+**In `merge` mode**, first wait for the PR's checks to pass using the plugin's CI-wait script, then merge following the project's merge conventions.
 
-**The CI wait is synchronous** (see Turn Discipline). If the project or your instructions define a CI-wait recipe, follow it — but always in its *blocking* form: the whole wait is one foreground Bash call with a long `timeout`, never a background watch you'd have to end your turn for. The canonical shape:
+The script owns the whole wait-for-green choreography — head-SHA pinning, waiting for checks to register, one unpiped watch, final rollup verification. Do not hand-roll any of it, and never trust `gh pr checks --watch`'s exit code on its own (it is 0 on "no checks yet" and on cancelled runs). Use the script path from your input message (or the fallback resolution in the Input section).
+
+**The CI wait is synchronous** (see Turn Discipline): run the script as a **foreground** Bash call with `timeout: 600000`, unpiped, pinned to the head you pushed:
 
 ```bash
-gh pr checks <PR-NUMBER> --watch --fail-fast >/dev/null 2>&1
-gh pr view <PR-NUMBER> --json headRefOid,mergeStateStatus,statusCheckRollup
+"<ci-wait-script-path>" <PR-NUMBER> --sha "$(git rev-parse HEAD)" --timeout 540
 ```
 
-The rollup query is the verdict — never trust the watch's exit code alone (it exits 0 on "no checks yet" and on cancelled runs). Green means: the head SHA is the one you pushed AND no check in the rollup is non-`SUCCESS`/`SKIPPED`/`NEUTRAL`. If checks haven't all surfaced yet, or the Bash call hits its timeout while checks are still pending, re-run the same call. Only merge once the rollup is green.
+Act on its exit code:
+
+- **0** — verified green: merge.
+- **3** (deadline, still pending) or the Bash call itself times out — re-issue the same call; the script is idempotent and resumes the wait.
+- **2** — CI is definitively red; the output names the failing checks. Treat like a failing build: fix if you can, otherwise Step 7 (blocked).
+- **4** — your push never became the PR head; re-push with an explicit refspec and re-run.
+- **5** — the PR head moved to a commit you didn't push; investigate before touching the PR further.
+- anything else — read the output; never merge without an exit-0 run.
 
 ## Step 11: Post-merge Cleanup (merge mode only)
 

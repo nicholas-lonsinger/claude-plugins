@@ -71,6 +71,40 @@ needing attention (broken store, missing import line, memory conflicts).
 
 **Requirements:** `git`, `gh` (authenticated), macOS or Linux
 
+### github
+
+GitHub workflow utilities. Currently one skill:
+
+| Skill | Command | Description |
+|-------|---------|-------------|
+| wait-ci | `/github:wait-ci` | Block until a PR's CI is verifiably green, then report a trustworthy verdict |
+
+The heavy lifting is `scripts/wait-for-ci.sh`, which encodes the whole
+wait-for-green choreography — pin the pushed head SHA (catches pushes that
+silently didn't land), wait for the base branch's required checks to actually
+register (a watch started too early sees no or partial checks and reports a
+false green), run one unpiped `gh pr checks --watch`, then verify the final
+status rollup directly (the watch's exit code alone is untrustworthy: it is 0
+for "no checks yet" and for cancelled runs). Distinct exit codes separate
+green / failed / still-pending / push-never-landed / head-moved, and the
+script is idempotent — re-run it to resume waiting.
+
+The `issues` plugin vendors a byte-identical copy of the script (see
+`tools/sync-vendored.sh`) so its issue-fixer agent stays self-contained.
+
+**Requirements:** `gh` (authenticated), `git`, macOS or Linux
+
+### issues
+
+GitHub issue management: `/issues:add` files well-formed issues with codebase
+context, and `/issues:fix` orchestrates end-to-end fixes — for each issue an
+Opus planning subagent verifies it still applies and designs the fix, an
+implementing agent builds, tests, opens a PR, and runs code review, then
+merges (`--merge`) or leaves the PR open. `--follow-up` also queues issues
+spawned during the run.
+
+**Requirements:** `gh` (authenticated), `git`
+
 ## Adding Plugins
 
 Each plugin lives in its own subdirectory with a `.claude-plugin/plugin.json` manifest. See the `issues/` directory for an example of the expected structure.
