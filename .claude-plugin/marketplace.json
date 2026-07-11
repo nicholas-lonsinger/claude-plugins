@@ -17,7 +17,7 @@
       "name": "github",
       "description": "GitHub workflow utilities for Claude Code — verified wait-for-green on pull request CI",
       "source": "./github",
-      "version": "0.1.0"
+      "version": "0.1.1"
     },
     {
       "name": "issues",

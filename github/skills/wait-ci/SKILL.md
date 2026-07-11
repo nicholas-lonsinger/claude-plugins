@@ -4,7 +4,9 @@ description: >-
   Wait for a pull request's CI to finish and verify it is genuinely green —
   required checks passed on the pushed head SHA — before merging or reporting
   status. Use whenever work depends on a PR's checks completing: merging after
-  a push, "merge when green", watching or babysitting CI.
+  a push, "merge when green", watching or babysitting CI. A push alone does
+  not arm a watcher — if nothing is gated on the result, report that CI is
+  running and move on.
 allowed-tools:
   - Bash
 ---
@@ -16,6 +18,12 @@ checks-registered barrier, one unpiped watch, and the final rollup
 verification. Do not hand-roll any of those steps, and never trust
 `gh pr checks --watch`'s exit code on its own — it is 0 for "no checks yet"
 and for cancelled runs. The script exists because of exactly those traps.
+
+When the user asks to merge a PR, waiting for verified green is the default —
+local tests passing are not a substitute (CI runners have different timing
+and surface flakes local runs don't). Skip the wait only when the user
+explicitly opts out ("just merge it", "skip CI", "merge without waiting") —
+they may know something specific about the run.
 
 ## Run it
 
