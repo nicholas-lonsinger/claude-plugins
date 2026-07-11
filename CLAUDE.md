@@ -18,13 +18,24 @@ Both files must have matching versions:
 
 ```
 .claude-plugin/marketplace.json   # Marketplace index — lists all plugins
-<plugin>/                         # One directory per plugin (statusline, issues, claude-memory-sync)
+<plugin>/                         # One directory per plugin (statusline, github, issues, claude-memory-sync)
   .claude-plugin/plugin.json      # Plugin manifest (name, version, component paths)
   skills/<skill-name>/SKILL.md    # Skills (invoked as /<plugin>:<skill-name>)
   scripts/                        # Supporting scripts used by skills and hooks
   hooks/hooks.json                # Session hooks (optional; auto-active when plugin enabled)
   templates/                      # Files skills copy out to stable paths (optional)
+tools/sync-vendored.sh            # Copies canonical shared scripts into plugins that vendor them
+.github/workflows/checks.yml      # CI: vendored-copy drift check + shell lint
 ```
+
+## Vendored Shared Scripts
+
+Plugins install as isolated per-plugin copies and cannot reference each
+other's files, so a script shared between plugins is **vendored**: one plugin
+owns the canonical file, the consumer carries a byte-identical copy
+(currently `github/scripts/wait-for-ci.sh` → `issues/scripts/wait-for-ci.sh`).
+Edit only the canonical file, then run `tools/sync-vendored.sh`; CI fails on
+drift. New pairs are registered in `tools/sync-vendored.sh`.
 
 ## Adding a New Skill
 
