@@ -55,7 +55,10 @@ cat > "$SCRATCH/.gitconfig" <<EOF
 [init]
 	defaultBranch = main
 EOF
-git init --bare -q "$REMOTE"
+# -b main explicitly: the store pushes to main, and clones follow this bare
+# repo's HEAD — without it, a machine whose git defaults to master (stock CI
+# runners) clones an unborn branch and gets an empty working tree
+git init --bare -q -b main "$REMOTE"
 mkdir -p "$STORE/memory" "$STORE/user"
 cp "$TPL/gitignore" "$STORE/.gitignore"
 cp "$TPL/gitattributes" "$STORE/.gitattributes"
