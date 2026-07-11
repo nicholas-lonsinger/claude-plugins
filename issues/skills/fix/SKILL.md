@@ -14,6 +14,8 @@ allowed-tools:
 
 # Fix GitHub Issue(s) — Orchestrator
 
+> **Recommended: pair long runs with `/goal`.** At the start of a multi-issue or `--merge` run, suggest (once, briefly) that the user set a completion goal, e.g. `/goal every issue in <input> (plus any follow-up issues the run spawns) has a terminal outcome — merged, closed, or blocked with a posted reason — and the Fix-Issue Summary table has been printed; or stop after 30 turns`. The goal evaluator re-prompts on every turn end until the summary exists, so a run cannot die silently mid-queue even if a notification is lost.
+
 You are an orchestrator that coordinates issue-fixing agents. You select issues, launch an `issues:issue-fixer` agent for each one, and manage the serial workflow. Each agent handles its issue end-to-end: an Opus planning subagent verifies the issue still applies and designs the fix, then the agent implements it, creates a PR, and runs `/code-review medium --fix`. With `--merge` the agent also merges the PR; otherwise it leaves the PR open for the user and moves on.
 
 ## Input
@@ -67,7 +69,7 @@ In `--follow-up` mode, deferred issues reported by completed agents join the que
 
 ### Step 1: Launch the Issue-Fixer Agent
 
-Launch the `issues:issue-fixer` agent in the foreground with `model: "sonnet"` (or the user-specified model) and the issue number and GitHub username. **Do not use `isolation: "worktree"`** — the agent works in the main repo tree and creates its branch in-place.
+Launch the `issues:issue-fixer` agent in the foreground — pass `run_in_background: false` explicitly (agents default to background) — with `model: "sonnet"` (or the user-specified model) and the issue number and GitHub username. **Do not use `isolation: "worktree"`** — the agent works in the main repo tree and creates its branch in-place.
 
 ```
 Fix GitHub issue #<NUMBER>.
@@ -86,6 +88,10 @@ Based on the agent's return status:
 - **`blocked`** — Agent could not complete the fix. Log the reason. Move to the next issue.
 - **`merged`** — PR was created, reviewed, and merged. Record success.
 - **`pr-created`** — (pr-only mode) PR was created and reviewed but intentionally left open. Record the PR number for the summary and move on.
+- **Non-terminal return (no `STATUS:` line)** — the agent ended without one of the statuses above, typically saying it is "waiting" for CI or a background task. The agent is gone: a completed subagent is never re-invoked, and notifications from tasks it orphaned may never be delivered. Do **not** end your turn to wait for one. Recover actively, in this order:
+  1. Check ground truth yourself: `gh pr view <PR> --json state,headRefOid,mergeStateStatus,statusCheckRollup` and `gh issue view <N> --json state`.
+  2. If everything left is mechanical — waiting for CI, merging, cleanup — finish it yourself with **blocking foreground** Bash calls (e.g. `gh pr checks <PR> --watch` in a single long-timeout call, then verify the rollup shows every check `SUCCESS`/`SKIPPED`/`NEUTRAL` on the pushed head SHA, then merge per project conventions).
+  3. Only if substantive work remains (unfixed review findings, failing checks needing code changes), resume the agent once via SendMessage with explicit instructions to finish synchronously and return a terminal `STATUS:`. If it returns non-terminal a second time, take over per step 2 or record the issue as `blocked` — do not resume it again.
 
 For `merged` and `pr-created` results that list `DEFERRED_ISSUES`: in `--follow-up` mode, append any numbers not already in the processed set to the work queue at the current issue's depth + 1 (unless that exceeds the depth cap); otherwise just note them for the summary report.
 
@@ -122,6 +128,7 @@ Mark follow-up issues as such in the notes. Without `--follow-up`, list any repo
 ## Important Notes
 
 - Process issues **one at a time**, serially. Do not launch multiple agents in parallel.
+- **Never end your turn while work is pending.** A run ends only by printing the Summary Report — with the queue empty and every agent result terminal. Ending a turn to "wait for a notification" is how runs silently die: if you are ever tempted to write "waiting for…", switch to a blocking foreground wait or take the remaining steps over yourself (see the non-terminal branch in Step 2).
 - Always re-fetch issues between iterations — the list may have changed.
 - Respect issue dependencies. Do not process an issue that is blocked by another open issue.
 - An agent closing an issue as stale or not worth fixing is a valid, successful outcome — do not re-open or retry it.
