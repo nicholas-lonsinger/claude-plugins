@@ -21,6 +21,15 @@ You will receive a message containing:
 - **GitHub username** of the repo owner (for assigning issues back)
 - **Merge mode** — `merge` (merge the PR after a clean review) or `pr-only` (leave the PR open for the user). If absent, default to `pr-only`.
 
+## Turn Discipline — You Are a Subagent
+
+Ending your turn returns you to the orchestrator as **complete** — there is no "pause and resume later". Nothing will ever re-invoke you: a background task you leave running is orphaned the moment you return, and its completion notification strands undelivered in the orchestrator's queue (observed live 2026-07-11: a green PR sat unmerged all night exactly this way). Therefore:
+
+- **Never end a turn to "wait" for anything** — CI, a build, a background task. If your final message would contain the words "waiting for", you are not done: go back and wait synchronously instead.
+- **Never pass `run_in_background: true` to Bash.** Run every long command (builds, tests, CI watches) as a normal foreground call with an adequate `timeout` (up to the 600000 ms maximum). If a wait can outlast one call, re-issue the same blocking call when it times out — do not convert it to a background task.
+- **No no-op polling turns.** Do not spin `date`/`echo`/short-`sleep` one-liners between status probes as a makeshift delay — each one is a full model turn. Pacing belongs *inside* a single Bash call: `until <condition>; do sleep 5; done`.
+- Your final message must be exactly the Step 12 `STATUS:` block — nothing about pending or in-flight work.
+
 ## Step 1: Fetch the Issue
 
 ```
@@ -146,7 +155,16 @@ Then, after a successful review:
 
 **In `pr-only` mode, skip the merge entirely.** Do not run `gh pr merge`. Check out the default branch (leave the PR branch intact — it backs the open PR), verify the working tree is clean, and go to Step 12.
 
-**In `merge` mode**, merge the PR following the project's merge conventions.
+**In `merge` mode**, first wait for the PR's required checks to pass, then merge following the project's merge conventions.
+
+**The CI wait is synchronous** (see Turn Discipline). If the project or your instructions define a CI-wait recipe, follow it — but always in its *blocking* form: the whole wait is one foreground Bash call with a long `timeout`, never a background watch you'd have to end your turn for. The canonical shape:
+
+```bash
+gh pr checks <PR-NUMBER> --watch --fail-fast >/dev/null 2>&1
+gh pr view <PR-NUMBER> --json headRefOid,mergeStateStatus,statusCheckRollup
+```
+
+The rollup query is the verdict — never trust the watch's exit code alone (it exits 0 on "no checks yet" and on cancelled runs). Green means: the head SHA is the one you pushed AND no check in the rollup is non-`SUCCESS`/`SKIPPED`/`NEUTRAL`. If checks haven't all surfaced yet, or the Bash call hits its timeout while checks are still pending, re-run the same call. Only merge once the rollup is green.
 
 ## Step 11: Post-merge Cleanup (merge mode only)
 
