@@ -82,6 +82,16 @@ Use AskUserQuestion when the realistic answers are enumerable (you can offer con
 
 ## Step 6: Draft and present the issue
 
+### Report, don't diagnose
+
+An issue body records **reported/observed behavior and verifiable facts**: what happened vs. what was expected, reproduction steps, environment, exact error text or log excerpts, and pointers to the relevant symbols found in Step 3. It must **not** assert a root cause. Diagnosing is the job of whoever picks the issue up, working against the code as it exists *then* — a diagnosis baked in at filing time anchors the fixer on a theory that was never verified (or has gone stale) and is worse than no theory at all.
+
+- Write "clicking Save twice creates two entries; the log shows two POSTs" — not "the Save handler is missing a debounce, causing double submission".
+- The Step 3 investigation exists to locate the right symbols to cite and to scope the ask — it is not license to assert a cause from a quick read.
+- **Exception — evidence-backed hypotheses.** If significant work has already been done (a traced code path, an instrumented reproduction, a bisect) and it produced a strong conclusion, it may be included — but only under the clearly-labeled `## Hypothesis (unverified — re-verify before acting)` section below, stating the evidence and how it was obtained. Never present a hypothesis as established fact in the Summary or Context, and never promote a hunch to this section: no real investigation, no hypothesis section.
+
+### Compose the draft
+
 Compose the full GitHub issue following any formatting rules found in project guidelines (Step 3). If no project-specific template exists, use this default structure:
 
 ```markdown
@@ -91,7 +101,11 @@ Compose the full GitHub issue following any formatting rules found in project gu
 
 ## Context
 
-< relevant background: current behavior, codebase state, motivation >
+< relevant background: observed behavior, codebase state, motivation — facts only, no root-cause claims >
+
+## Hypothesis (unverified — re-verify before acting)
+
+< only when significant prior investigation produced a strong, evidence-backed theory: the theory, the evidence, and how it was obtained — omit section otherwise >
 
 ## Requirements
 

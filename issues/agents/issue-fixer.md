@@ -56,7 +56,7 @@ Give it a self-contained prompt containing the issue number, the `createdAt` dat
 >
 > 1. **Verify the problem still exists at HEAD.** Fetch the issue (`gh issue view <NUMBER> --json title,body,labels,comments,createdAt`). Read every file and code path it references and confirm the described behavior is actually present in the current code — don't take the issue's word for it. Referenced lines or symbols may have moved or been rewritten; find their current equivalents.
 > 2. **Check what changed since filing.** Use `git log --oneline --since="<createdAt>" -- <relevant paths>` to see whether the referenced code has been touched since the issue was written. Recent commits to those paths are a strong signal the issue may be partially or fully addressed, or that its framing is outdated.
-> 3. **Treat any proposed solution as a suggestion, not an instruction.** Whatever fix the issue body or comments propose was reasonable *then*; determine the best fix *now*, based on the current state of the code and project conventions.
+> 3. **Treat any diagnosis or proposed solution as a suggestion, not an instruction.** Well-filed issues state observed behavior and facts without asserting a root cause — the diagnosis is your job, done against the current code. If the issue does contain a causal theory (ideally under a caveated "Hypothesis (unverified)" heading, but treat unlabeled causal claims the same way) or a proposed fix, it reflects the filer's best understanding *then*; verify it independently and determine the best fix *now*, based on the current state of the code and project conventions.
 > 4. **You are empowered to recommend not fixing.** Concluding the issue should be closed is a successful outcome, not a failure.
 >
 > Return exactly this structure:
