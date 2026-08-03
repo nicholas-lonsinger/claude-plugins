@@ -1,6 +1,6 @@
 ---
 name: fix
-description: Fix GitHub issues by number or query. Pass issue numbers, or instructions like "select all issues whose label begins with 'review-debt'". Add --merge to auto-merge each PR, --follow-up to also queue issues filed during the run (e.g. deferred code-review findings)
+description: Fix GitHub issues by number or query. Pass issue numbers, or instructions like "select all issues whose label begins with 'review-debt'". Add --merge to auto-merge each PR, --follow-up to also queue issues filed during the run (e.g. deferred review findings)
 argument-hint: "<issue-number(s) or selection instructions> [--merge] [--follow-up [depth]]"
 disable-model-invocation: true
 allowed-tools:
@@ -16,7 +16,7 @@ allowed-tools:
 
 > **Recommended: pair long runs with `/goal`.** At the start of a multi-issue or `--merge` run, suggest (once, briefly) that the user set a completion goal, e.g. `/goal every issue in <input> (plus any follow-up issues the run spawns) has a terminal outcome — merged, closed, or blocked with a posted reason — and the Fix-Issue Summary table has been printed; or stop after 30 turns`. The goal evaluator re-prompts on every turn end until the summary exists, so a run cannot die silently mid-queue even if a notification is lost.
 
-You are an orchestrator that coordinates issue-fixing agents. You select issues, launch an `issues:issue-fixer` agent for each one, and manage the serial workflow. Each agent handles its issue end-to-end: an Opus planning subagent verifies the issue still applies and designs the fix, then the agent implements it, creates a PR, and runs `/code-review medium --fix`. With `--merge` the agent also merges the PR; otherwise it leaves the PR open for the user and moves on.
+You are an orchestrator that coordinates issue-fixing agents. You select issues, launch an `issues:issue-fixer` agent for each one, and manage the serial workflow. Each agent handles its issue end-to-end: an Opus planning subagent verifies the issue still applies and designs the fix, then the agent implements it, creates a PR, reviews it with the built-in `/review` skill, and fixes verified findings. With `--merge` the agent also merges the PR; otherwise it leaves the PR open for the user and moves on.
 
 ## Input
 
@@ -28,7 +28,7 @@ Check the input for these flags before interpreting the rest as issue numbers or
 
 - **`--merge`** — after a successful code review, the agent merges the PR and runs post-merge cleanup. Without this flag, the agent stops after the review: it leaves the PR open, returns to the default branch, and the run moves on to the next issue, leaving all PRs for the user to merge.
 
-- **`--follow-up [depth]`** (alias: `--recursive`) — issues filed *during* the run also get fixed. When a completed agent reports `DEFERRED_ISSUES` (issues created for deferred code-review findings or other follow-up work), append those numbers to the work queue instead of leaving them for a future run. Without this flag, report deferred issues in the summary but do not process them.
+- **`--follow-up [depth]`** (alias: `--recursive`) — issues filed *during* the run also get fixed. When a completed agent reports `DEFERRED_ISSUES` (issues created for deferred review findings or other follow-up work), append those numbers to the work queue instead of leaving them for a future run. Without this flag, report deferred issues in the summary but do not process them.
 
   **Depth cap:** the optional number bounds how many generations of follow-ups to chase (default **2**). Issues from the original input are depth 0; issues they spawn are depth 1, and so on. Track each queued issue's depth; when an agent at the max depth reports `DEFERRED_ISSUES`, do not queue them — list them in the summary as unprocessed, noting the cap was hit. `--follow-up 1` chases only direct spawns; a higher number chases deeper.
 
@@ -78,7 +78,7 @@ Merge mode: <"merge" if --merge was passed, otherwise "pr-only">
 CI wait script: ${CLAUDE_PLUGIN_ROOT}/scripts/wait-for-ci.sh
 ```
 
-Wait for the agent to complete. The agent has its Opus planner verify the issue still applies and design the fix, implements it, creates a PR, runs `/code-review medium --fix`, and addresses PR comments. In merge mode it then merges; in pr-only mode it leaves the PR open and returns to the default branch.
+Wait for the agent to complete. The agent has its Opus planner verify the issue still applies and design the fix, implements it, creates a PR, reviews it with the built-in `/review` skill, fixes verified findings, and addresses PR comments. In merge mode it then merges; in pr-only mode it leaves the PR open and returns to the default branch.
 
 ### Step 2: Handle the Result
 

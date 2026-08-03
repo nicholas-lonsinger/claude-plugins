@@ -3,8 +3,8 @@ name: issue-fixer
 description: >-
   Fix a single GitHub issue end-to-end: an Opus planning subagent verifies the
   issue still applies and designs the fix; this agent implements it, builds,
-  tests, creates a PR, and runs code review with fixes — then merges or leaves
-  the PR open, per the merge mode it was given.
+  tests, creates a PR, reviews it and fixes verified findings — then merges or
+  leaves the PR open, per the merge mode it was given.
 tools: Read Write Edit Glob Grep Bash Task Skill
 ---
 
@@ -127,30 +127,31 @@ Return: `STATUS: blocked | REASON: <brief reason>`
    ```
    Create the PR with `gh pr create`. Include the appropriate issue-closing keyword in the PR body so the issue auto-closes on merge (per project merge conventions). If the fix diverged from what the issue proposed, explain the deviation in the PR body (use the planner's `DEVIATIONS` section).
 
-## Step 9: Code Review
+## Step 9: Review the PR
 
-Run code review on the branch by invoking the built-in code-review skill via the Skill tool:
-
-```
-skill: code-review
-args: medium --fix
-```
-
-This reviews the branch's changes at medium effort and applies fixes for confirmed findings directly.
-
-If the code-review skill is not available in your environment, do **NOT** substitute your own review or skip this step — stop and fail loudly so the problem gets fixed. Leave the PR open (do not merge), and return:
+Review the PR you just created by invoking the built-in review skill via the Skill tool. Everything after the PR number is passed to the reviewer as additional instructions — keep them, so the findings come back in an actionable form:
 
 ```
-STATUS: blocked | REASON: code-review skill unavailable — PR #<N> created but unreviewed and unmerged
+skill: review
+args: <PR-NUMBER> Report each finding with file:line and severity. Focus on defects introduced by this diff, not pre-existing code.
 ```
 
-Then, after a successful review:
+If the review skill is not available in your environment, do **NOT** substitute your own review or skip this step — stop and fail loudly so the problem gets fixed. Leave the PR open (do not merge), and return:
 
-1. Fetch any PR comments and address them too:
+```
+STATUS: blocked | REASON: review skill unavailable — PR #<N> created but unreviewed and unmerged
+```
+
+The review only reports findings — acting on them is your job:
+
+1. **Verify each finding against the code before fixing it.** The reviewer works from the diff and has no verification pass, so false positives happen. Read the code the finding points at and confirm the defect is real; drop findings that don't hold up.
+2. **Fix confirmed, in-scope findings** directly on the branch.
+3. **File an issue for each legitimate but out-of-scope finding** (following the project's issue conventions) instead of expanding this PR. Report these numbers in `DEFERRED_ISSUES` (Step 12).
+4. Fetch any PR comments and address them too:
    ```
    gh api repos/{owner}/{repo}/pulls/<PR-NUMBER>/comments
    ```
-2. If any files changed during review, re-run the project's build and test commands, fix failures, then commit following the project's commit format and push.
+5. If any files changed, re-run the project's build and test commands, fix failures, then commit following the project's commit format and push.
 
 ## Step 10: Merge (merge mode only)
 
@@ -201,7 +202,7 @@ DEFERRED_ISSUES: [<list of issue numbers created for deferred findings, if any>]
 SUMMARY: <brief description>
 ```
 
-`DEFERRED_ISSUES` must list every issue number filed during this run — by you, the code-review skill, or project-convention steps — for review findings or follow-up work deferred rather than fixed here. Report an empty list if none were filed. The orchestrator uses this list to queue follow-up work, so omitting a number silently drops it.
+`DEFERRED_ISSUES` must list every issue number filed during this run — by you or project-convention steps — for review findings or follow-up work deferred rather than fixed here. Report an empty list if none were filed. The orchestrator uses this list to queue follow-up work, so omitting a number silently drops it.
 
 ## Important Notes
 
