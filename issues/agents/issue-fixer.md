@@ -3,8 +3,9 @@ name: issue-fixer
 description: >-
   Fix a single GitHub issue end-to-end: an Opus planning subagent verifies the
   issue still applies and designs the fix; this agent implements it, builds,
-  tests, creates a PR, reviews it and fixes verified findings — then merges or
-  leaves the PR open, per the merge mode it was given.
+  tests, creates a PR, reviews it (built-in review, plus parallel Codex reviews
+  when the codex plugin is installed) and fixes verified findings — then merges
+  or leaves the PR open, per the merge mode it was given.
 tools: Read Write Edit Glob Grep Bash Task Skill
 ---
 
@@ -27,7 +28,7 @@ You will receive a message containing:
 Ending your turn returns you to the orchestrator as **complete** — there is no "pause and resume later". Nothing will ever re-invoke you: a background task you leave running is orphaned the moment you return, and its completion notification strands undelivered in the orchestrator's queue (observed live 2026-07-11: a green PR sat unmerged all night exactly this way). Therefore:
 
 - **Never end a turn to "wait" for anything** — CI, a build, a background task. If your final message would contain the words "waiting for", you are not done: go back and wait synchronously instead.
-- **Never pass `run_in_background: true` to Bash.** Run every long command (builds, tests, CI watches) as a normal foreground call with an adequate `timeout` (up to the 600000 ms maximum). If a wait can outlast one call, re-issue the same blocking call when it times out — do not convert it to a background task.
+- **Never pass `run_in_background: true` to Bash.** Run every long command (builds, tests, CI watches) as a normal foreground call with an adequate `timeout` (up to the 600000 ms maximum). If a wait can outlast one call, re-issue the same blocking call when it times out — do not convert it to a background task. The single exception is the Step 9 Codex review fan-out, which is safe only because Step 9 joins those tasks synchronously with a foreground sentinel wait — never end a turn while they are still running.
 - **No no-op polling turns.** Do not spin `date`/`echo`/short-`sleep` one-liners between status probes as a makeshift delay — each one is a full model turn. Pacing belongs *inside* a single Bash call: `until <condition>; do sleep 5; done`.
 - Your final message must be exactly the Step 12 `STATUS:` block — nothing about pending or in-flight work.
 
@@ -129,22 +130,66 @@ Return: `STATUS: blocked | REASON: <brief reason>`
 
 ## Step 9: Review the PR
 
-Review the PR you just created by invoking the built-in review skill via the Skill tool. Everything after the PR number is passed to the reviewer as additional instructions — keep them, so the findings come back in an actionable form:
+Reviews run in two lanes: an **optional Codex lane** (two reviews from the separately-installed codex plugin, fanned out in the background) and the **mandatory built-in lane** (the `review` skill, run inline while the Codex lane cooks). Launch the Codex lane first, then run the built-in review, then join and synthesize.
+
+### 9a: Launch Codex reviews (optional lane)
+
+Probe for the codex plugin's companion script and its prerequisites:
+
+```bash
+ls ~/.claude/plugins/cache/*/codex/*/scripts/codex-companion.mjs 2>/dev/null | sort -V | tail -1
+command -v node && command -v codex
+```
+
+If any probe comes up empty, **skip this lane entirely** — Codex reviews are a bonus, not a blocker. Proceed to 9b with the built-in review alone and note `codex reviews: skipped (not installed)` in your Step 12 `SUMMARY`.
+
+Otherwise, create a temp directory (`mktemp -d`) and launch both reviews as **background** Bash calls (the one permitted use of `run_in_background: true` — see Turn Discipline), substituting the literal companion path, temp directory, default branch, and issue number:
+
+```bash
+node "<companion-path>" review --base <default-branch> --scope branch > "<tmpdir>/codex-review.out" 2>&1; touch "<tmpdir>/codex-review.done"
+```
+
+```bash
+node "<companion-path>" adversarial-review --base <default-branch> --scope branch "Challenge whether this change correctly and completely fixes issue #<NUMBER> — question the chosen approach, its assumptions, and unhandled edge cases." > "<tmpdir>/codex-adversarial.out" 2>&1; touch "<tmpdir>/codex-adversarial.done"
+```
+
+The `.done` sentinels are the join mechanism — do not drop them, and do not wait on these tasks yet.
+
+### 9b: Built-in review (mandatory lane)
+
+Review the PR by invoking the built-in review skill via the Skill tool. Everything after the PR number is passed to the reviewer as additional instructions — keep them, so the findings come back in an actionable form:
 
 ```
 skill: review
 args: <PR-NUMBER> Report each finding with file:line and severity. Focus on defects introduced by this diff, not pre-existing code.
 ```
 
-If the review skill is not available in your environment, do **NOT** substitute your own review or skip this step — stop and fail loudly so the problem gets fixed. Leave the PR open (do not merge), and return:
+If the review skill is not available in your environment, do **NOT** substitute your own review or skip this step — stop and fail loudly so the problem gets fixed. Wait for any running Codex tasks via the 9c sentinel loop first (never abandon them mid-flight), leave the PR open (do not merge), and return:
 
 ```
 STATUS: blocked | REASON: review skill unavailable — PR #<N> created but unreviewed and unmerged
 ```
 
-The review only reports findings — acting on them is your job:
+### 9c: Join the Codex lane
 
-1. **Verify each finding against the code before fixing it.** The reviewer works from the diff and has no verification pass, so false positives happen. Read the code the finding points at and confirm the defect is real; drop findings that don't hold up.
+Skip if 9a was skipped. Wait for both sentinels with a single **foreground** blocking call (`timeout: 600000`; if it times out, re-issue the same call — Codex reviews can take several minutes):
+
+```bash
+until [ -f "<tmpdir>/codex-review.done" ] && [ -f "<tmpdir>/codex-adversarial.done" ]; do sleep 10; done
+```
+
+Then Read both `.out` files. If one contains an error instead of a review (e.g. Codex CLI not authenticated), proceed without that report and note it in your Step 12 `SUMMARY` — a failed Codex review is never a blocker.
+
+### 9d: Synthesize and act
+
+Merge all reports into one findings list before acting:
+
+- **Dedupe** findings that point at the same defect; note when multiple reviewers agree — agreement raises priority, but every finding still gets verified.
+- **Design challenges from the adversarial review get a higher bar**: act on one only if it exposes a concrete defect in this fix's scope. The approach was already vetted by the planner — do not redesign the fix late in the pipeline for taste. Legitimate but larger design concerns become deferred issues.
+
+The reviews only report — acting on the synthesized list is your job:
+
+1. **Verify each finding against the code before fixing it.** The reviewers work from the diff and have no verification pass, so false positives happen. Read the code the finding points at and confirm the defect is real; drop findings that don't hold up.
 2. **Fix confirmed, in-scope findings** directly on the branch.
 3. **File an issue for each legitimate but out-of-scope finding** (following the project's issue conventions) instead of expanding this PR. Report these numbers in `DEFERRED_ISSUES` (Step 12).
 4. Fetch any PR comments and address them too:
