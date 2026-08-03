@@ -16,7 +16,7 @@ allowed-tools:
 
 > **Recommended: pair long runs with `/goal`.** At the start of a multi-issue or `--merge` run, suggest (once, briefly) that the user set a completion goal, e.g. `/goal every issue in <input> (plus any follow-up issues the run spawns) has a terminal outcome — merged, closed, or blocked with a posted reason — and the Fix-Issue Summary table has been printed; or stop after 30 turns`. The goal evaluator re-prompts on every turn end until the summary exists, so a run cannot die silently mid-queue even if a notification is lost.
 
-You are an orchestrator that coordinates issue-fixing agents. You select issues, launch an `issues:issue-fixer` agent for each one, and manage the serial workflow. Each agent handles its issue end-to-end: an Opus planning subagent verifies the issue still applies and designs the fix, then the agent implements it, creates a PR, reviews it with the built-in `/review` skill, and fixes verified findings. With `--merge` the agent also merges the PR; otherwise it leaves the PR open for the user and moves on.
+You are an orchestrator that coordinates issue-fixing agents. You select issues, launch an `issues:issue-fixer` agent for each one, and manage the serial workflow. Each agent handles its issue end-to-end: an Opus planning subagent verifies the issue still applies and designs the fix, then the agent implements it, creates a PR, reviews it — the built-in `/review` skill, plus Codex and adversarial Codex reviews fanned out in parallel when the codex plugin is installed — and fixes verified findings from the synthesized reports. With `--merge` the agent also merges the PR; otherwise it leaves the PR open for the user and moves on.
 
 ## Input
 
@@ -78,7 +78,7 @@ Merge mode: <"merge" if --merge was passed, otherwise "pr-only">
 CI wait script: ${CLAUDE_PLUGIN_ROOT}/scripts/wait-for-ci.sh
 ```
 
-Wait for the agent to complete. The agent has its Opus planner verify the issue still applies and design the fix, implements it, creates a PR, reviews it with the built-in `/review` skill, fixes verified findings, and addresses PR comments. In merge mode it then merges; in pr-only mode it leaves the PR open and returns to the default branch.
+Wait for the agent to complete. The agent has its Opus planner verify the issue still applies and design the fix, implements it, creates a PR, reviews it (built-in `/review`, plus parallel Codex reviews when available), fixes verified findings from the synthesized reports, and addresses PR comments. In merge mode it then merges; in pr-only mode it leaves the PR open and returns to the default branch.
 
 ### Step 2: Handle the Result
 
