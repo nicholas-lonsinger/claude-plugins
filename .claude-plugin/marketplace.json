@@ -15,9 +15,9 @@
     },
     {
       "name": "github",
-      "description": "GitHub workflow utilities for Claude Code — verified wait-for-green on pull request CI",
+      "description": "GitHub workflow utilities for Claude Code — verified wait-for-green on pull request CI, and a worktree-safe default-branch fast-forward after merge",
       "source": "./github",
-      "version": "0.1.1"
+      "version": "0.2.0"
     },
     {
       "name": "issues",
