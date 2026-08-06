@@ -1,13 +1,13 @@
 {
   "name": "github",
-  "version": "0.1.1",
-  "description": "GitHub workflow utilities for Claude Code — verified wait-for-green on pull request CI",
+  "version": "0.2.0",
+  "description": "GitHub workflow utilities for Claude Code — verified wait-for-green on pull request CI, and a worktree-safe default-branch fast-forward after merge",
   "author": {
     "name": "Nicholas Lonsinger",
     "url": "https://github.com/nicholas-lonsinger"
   },
   "repository": "https://github.com/nicholas-lonsinger/claude-plugins",
   "license": "MIT",
-  "keywords": ["github", "ci", "checks", "pull-request", "merge", "wait-ci"],
+  "keywords": ["github", "ci", "checks", "pull-request", "merge", "wait-ci", "freshen-main", "worktree"],
   "skills": "./skills/"
 }

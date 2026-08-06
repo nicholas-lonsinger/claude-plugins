@@ -73,13 +73,25 @@ needing attention (broken store, missing import line, memory conflicts).
 
 ### github
 
-GitHub workflow utilities. Currently one skill:
+Utilities for the two steps of the pull request lifecycle that are easy to get
+wrong — waiting for CI, and cleaning up after the merge:
 
 | Skill | Command | Description |
 |-------|---------|-------------|
 | wait-ci | `/github:wait-ci` | Block until a PR's CI is verifiably green, then report a trustworthy verdict |
+| freshen-main | `/github:freshen-main` | Fast-forward the local default branch after a merge, from inside a worktree |
 
-The heavy lifting is `scripts/wait-for-ci.sh`, which encodes the whole
+`scripts/freshen-main.sh` handles the post-merge half. A squash merge advances
+the branch on the remote and leaves the local ref behind, and a session running
+inside a git worktree cannot move it: the branch is checked out in another
+directory, so no in-worktree git command touches it, and ad-hoc
+`git -C <other-checkout>` is refused by the worktree-isolation guard. The
+script fetches with prune, resolves the default branch from the remote's HEAD
+symref, finds whichever worktree has it checked out, and fast-forwards there —
+printing one line when it moves the branch and staying silent when there is
+nothing safe to do.
+
+The heavy lifting for the CI half is `scripts/wait-for-ci.sh`, which encodes the whole
 wait-for-green choreography — pin the pushed head SHA (catches pushes that
 silently didn't land), wait for the base branch's required checks to actually
 register (a watch started too early sees no or partial checks and reports a
