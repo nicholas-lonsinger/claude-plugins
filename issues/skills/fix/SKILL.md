@@ -75,7 +75,6 @@ Launch the `issues:issue-fixer` agent in the foreground — pass `run_in_backgro
 Fix GitHub issue #<NUMBER>.
 GitHub username for assigning issues: <GITHUB_USERNAME>
 Merge mode: <"merge" if --merge was passed, otherwise "pr-only">
-CI wait script: ${CLAUDE_PLUGIN_ROOT}/scripts/wait-for-ci.sh
 ```
 
 Wait for the agent to complete. The agent has its Opus planner verify the issue still applies and design the fix, implements it, creates a PR, reviews it (built-in `/review`, plus parallel Codex reviews when available), fixes verified findings from the synthesized reports, and addresses PR comments. In merge mode it then merges; in pr-only mode it leaves the PR open and returns to the default branch.
@@ -91,7 +90,7 @@ Based on the agent's return status:
 - **`pr-created`** — (pr-only mode) PR was created and reviewed but intentionally left open. Record the PR number for the summary and move on.
 - **Non-terminal return (no `STATUS:` line)** — the agent ended without one of the statuses above, typically saying it is "waiting" for CI or a background task. The agent is gone: a completed subagent is never re-invoked, and notifications from tasks it orphaned may never be delivered. Do **not** end your turn to wait for one. Recover actively, in this order:
   1. Check ground truth yourself: `gh pr view <PR> --json state,headRefOid,mergeStateStatus,statusCheckRollup` and `gh issue view <N> --json state`.
-  2. If everything left is mechanical — waiting for CI, merging, cleanup — finish it yourself with **blocking foreground** Bash calls. For the CI wait, run the plugin's script unpiped: `"${CLAUDE_PLUGIN_ROOT}/scripts/wait-for-ci.sh" <PR> --timeout 540` (re-issue on exit 3; it verifies the head SHA and the full rollup itself). Merge per project conventions only on exit 0.
+  2. If everything left is mechanical — waiting for CI, merging, cleanup — finish it yourself with **blocking foreground** Bash calls. For the CI wait, run `gh pr checks <PR> --watch --fail-fast` unpiped (re-issue it on exit 8 or a Bash timeout). Merge per project conventions only on exit 0.
   3. Only if substantive work remains (unfixed review findings, failing checks needing code changes), resume the agent once via SendMessage with explicit instructions to finish synchronously and return a terminal `STATUS:`. If it returns non-terminal a second time, take over per step 2 or record the issue as `blocked` — do not resume it again.
 
 For `merged` and `pr-created` results that list `DEFERRED_ISSUES`: in `--follow-up` mode, append any numbers not already in the processed set to the work queue at the current issue's depth + 1 (unless that exceeds the depth cap); otherwise just note them for the summary report.

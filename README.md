@@ -100,15 +100,8 @@ implementing agent builds, tests, opens a PR, and runs code review, then
 merges (`--merge`) or leaves the PR open. `--follow-up` also queues issues
 spawned during the run.
 
-Before merging, the fixer runs `scripts/wait-for-ci.sh`, which encodes the
-whole wait-for-green choreography — pin the pushed head SHA (catches pushes
-that silently didn't land), wait for the base branch's required checks to
-actually register (a watch started too early sees no or partial checks and
-reports a false green), run one unpiped `gh pr checks --watch`, then verify
-the final status rollup directly (the watch's exit code alone is
-untrustworthy: it is 0 for "no checks yet" and for cancelled runs). Distinct
-exit codes separate green / failed / still-pending / push-never-landed /
-head-moved, and the script is idempotent — re-run it to resume waiting.
+In `--merge` mode the fixer waits on `gh pr checks <PR> --watch --fail-fast`
+and merges only when it exits 0.
 
 **Requirements:** `gh` (authenticated), `git`
 
