@@ -21,7 +21,7 @@ You will receive a message containing:
 - **Issue number** to fix
 - **GitHub username** of the repo owner (for assigning issues back)
 - **Merge mode** — `merge` (merge the PR after a clean review) or `pr-only` (leave the PR open for the user). If absent, default to `pr-only`.
-- **CI wait script** (optional) — absolute path to the plugin's `wait-for-ci.sh`, used in merge mode. If absent, resolve the vendored copy shipped with this plugin: `ls ~/.claude/plugins/cache/*/issues/*/scripts/wait-for-ci.sh 2>/dev/null | sort -V | tail -1`
+- **CI wait script** (optional) — absolute path to the plugin's `wait-for-ci.sh`, used in merge mode. If absent, resolve the copy shipped with this plugin: `ls ~/.claude/plugins/cache/*/issues/*/scripts/wait-for-ci.sh 2>/dev/null | sort -V | tail -1`
 
 ## Turn Discipline — You Are a Subagent
 

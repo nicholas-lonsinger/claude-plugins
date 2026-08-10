@@ -1,11 +1,6 @@
 #!/usr/bin/env bash
 # wait-for-ci.sh — block until a pull request's CI is verifiably green.
 #
-# CANONICAL SOURCE: github/scripts/wait-for-ci.sh in nicholas-lonsinger/claude-plugins.
-# A byte-identical copy is vendored at issues/scripts/wait-for-ci.sh so the issues
-# plugin stays self-contained. Edit ONLY the canonical file, then run
-# tools/sync-vendored.sh — CI fails the build on drift.
-#
 # Encodes the full wait-for-green choreography so callers never improvise it:
 #   1. Pin the expected head SHA and wait for the PR to report it
 #      (catches pushes that silently didn't land).

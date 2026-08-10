@@ -10,8 +10,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - name: Vendored copies match their canonical sources
-        run: tools/sync-vendored.sh --check
       - name: Shell syntax
         run: git ls-files '*.sh' | xargs -n1 bash -n
       - name: Shellcheck (all tracked scripts; project directives in .shellcheckrc)
