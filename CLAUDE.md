@@ -24,32 +24,23 @@ Both files must have matching versions:
   scripts/                        # Supporting scripts used by skills and hooks
   hooks/hooks.json                # Session hooks (optional; auto-active when plugin enabled)
   templates/                      # Files skills copy out to stable paths (optional)
-tools/sync-vendored.sh            # Copies canonical shared scripts into plugins that vendor them
-.github/workflows/checks.yml      # CI: vendored drift + shell lint + JSON parse + memory-sync tests
+.github/workflows/checks.yml      # CI: shell lint + JSON parse + memory-sync tests
 .shellcheckrc                     # Project-wide shellcheck directives (follow sourced libs)
 ```
 
-## Vendored Shared Scripts
-
 Plugins install as isolated per-plugin copies and cannot reference each
-other's files, so a script shared between plugins is **vendored**: one plugin
-owns the canonical file, the consumer carries a byte-identical copy
-(currently `github/scripts/wait-for-ci.sh` → `issues/scripts/wait-for-ci.sh`).
-Edit only the canonical file, then run `tools/sync-vendored.sh`; CI fails on
-drift. New pairs are registered in `tools/sync-vendored.sh`.
+other's files.
 
 ## Checks
 
-CI (`checks.yml`) runs on every PR and push to `main`: the vendored-copy
-drift check, `bash -n` + `shellcheck` over **every** tracked script
-(project-wide directives live in `.shellcheckrc` — new scripts get coverage
-automatically, keep them warning-free), `jq empty` over every tracked JSON
-manifest, and the claude-memory-sync test harness (hermetic: scratch `$HOME`,
-local bare-repo origin, stubbed `claude`). Run the same locally before
-pushing:
+CI (`checks.yml`) runs on every PR and push to `main`: `bash -n` +
+`shellcheck` over **every** tracked script (project-wide directives live in
+`.shellcheckrc` — new scripts get coverage automatically, keep them
+warning-free), `jq empty` over every tracked JSON manifest, and the
+claude-memory-sync test harness (hermetic: scratch `$HOME`, local bare-repo
+origin, stubbed `claude`). Run the same locally before pushing:
 
 ```bash
-tools/sync-vendored.sh --check
 git ls-files '*.sh' | xargs shellcheck
 git ls-files '*.json' | xargs -n1 jq empty
 bash claude-memory-sync/tests/memtest.sh

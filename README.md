@@ -73,36 +73,21 @@ needing attention (broken store, missing import line, memory conflicts).
 
 ### github
 
-Utilities for the two steps of the pull request lifecycle that are easy to get
-wrong — waiting for CI, and cleaning up after the merge:
+Cleanup for the step of the pull request lifecycle that is easy to get wrong —
+moving the local default branch after the merge:
 
 | Skill | Command | Description |
 |-------|---------|-------------|
-| wait-ci | `/github:wait-ci` | Block until a PR's CI is verifiably green, then report a trustworthy verdict |
 | freshen-main | `/github:freshen-main` | Fast-forward the local default branch after a merge, from inside a worktree |
 
-`scripts/freshen-main.sh` handles the post-merge half. A squash merge advances
-the branch on the remote and leaves the local ref behind, and a session running
-inside a git worktree cannot move it: the branch is checked out in another
-directory, so no in-worktree git command touches it, and ad-hoc
-`git -C <other-checkout>` is refused by the worktree-isolation guard. The
-script fetches with prune, resolves the default branch from the remote's HEAD
-symref, finds whichever worktree has it checked out, and fast-forwards there —
-printing one line when it moves the branch and staying silent when there is
-nothing safe to do.
-
-The heavy lifting for the CI half is `scripts/wait-for-ci.sh`, which encodes the whole
-wait-for-green choreography — pin the pushed head SHA (catches pushes that
-silently didn't land), wait for the base branch's required checks to actually
-register (a watch started too early sees no or partial checks and reports a
-false green), run one unpiped `gh pr checks --watch`, then verify the final
-status rollup directly (the watch's exit code alone is untrustworthy: it is 0
-for "no checks yet" and for cancelled runs). Distinct exit codes separate
-green / failed / still-pending / push-never-landed / head-moved, and the
-script is idempotent — re-run it to resume waiting.
-
-The `issues` plugin vendors a byte-identical copy of the script (see
-`tools/sync-vendored.sh`) so its issue-fixer agent stays self-contained.
+`scripts/freshen-main.sh` does the work. A squash merge advances the branch on
+the remote and leaves the local ref behind, and a session running inside a git
+worktree cannot move it: the branch is checked out in another directory, so no
+in-worktree git command touches it, and ad-hoc `git -C <other-checkout>` is
+refused by the worktree-isolation guard. The script fetches with prune,
+resolves the default branch from the remote's HEAD symref, finds whichever
+worktree has it checked out, and fast-forwards there — printing one line when
+it moves the branch and staying silent when there is nothing safe to do.
 
 **Requirements:** `gh` (authenticated), `git`, macOS or Linux
 
@@ -114,6 +99,9 @@ Opus planning subagent verifies it still applies and designs the fix, an
 implementing agent builds, tests, opens a PR, and runs code review, then
 merges (`--merge`) or leaves the PR open. `--follow-up` also queues issues
 spawned during the run.
+
+In `--merge` mode the fixer waits on `gh pr checks <PR> --watch --fail-fast`
+and merges only when it exits 0.
 
 **Requirements:** `gh` (authenticated), `git`
 

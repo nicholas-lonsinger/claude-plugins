@@ -15,15 +15,15 @@
     },
     {
       "name": "github",
-      "description": "GitHub workflow utilities for Claude Code — verified wait-for-green on pull request CI, and a worktree-safe default-branch fast-forward after merge",
+      "description": "GitHub workflow utilities for Claude Code — a worktree-safe default-branch fast-forward after merge",
       "source": "./github",
-      "version": "0.2.0"
+      "version": "0.3.0"
     },
     {
       "name": "issues",
       "description": "GitHub issue management utilities for Claude Code — create and fix issues with codebase context",
       "source": "./issues",
-      "version": "2.4.0"
+      "version": "2.5.0"
     },
     {
       "name": "claude-memory-sync",
