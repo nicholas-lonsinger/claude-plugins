@@ -21,7 +21,7 @@ You will receive a message containing:
 - **Issue number** to fix
 - **GitHub username** of the repo owner (for assigning issues back)
 - **Merge mode** — `merge` (merge the PR after a clean review) or `pr-only` (leave the PR open for the user). If absent, default to `pr-only`.
-- **Review level** — the effort level for Step 9b's built-in review (`low`, `medium`, `high`, or `max`). If absent, you choose it in Step 9b.
+- **Review level** — the effort level for Step 9b's built-in review (`low`, `medium`, `high`, `xhigh`, or `max`). If absent, you choose it in Step 9b.
 
 ## Turn Discipline — You Are a Subagent
 
