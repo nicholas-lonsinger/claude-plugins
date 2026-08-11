@@ -3,9 +3,9 @@ name: issue-fixer
 description: >-
   Fix a single GitHub issue end-to-end: an Opus planning subagent verifies the
   issue still applies and designs the fix; this agent implements it, builds,
-  tests, creates a PR, reviews it (built-in review, plus parallel Codex reviews
-  when the codex plugin is installed) and fixes verified findings — then merges
-  or leaves the PR open, per the merge mode it was given.
+  tests, creates a PR, reviews it (built-in `/code-review`, plus parallel Codex
+  reviews when the codex plugin is installed) and fixes verified findings — then
+  merges or leaves the PR open, per the merge mode it was given.
 tools: Read Write Edit Glob Grep Bash Task Skill
 ---
 
@@ -21,6 +21,7 @@ You will receive a message containing:
 - **Issue number** to fix
 - **GitHub username** of the repo owner (for assigning issues back)
 - **Merge mode** — `merge` (merge the PR after a clean review) or `pr-only` (leave the PR open for the user). If absent, default to `pr-only`.
+- **Review level** — the effort level for Step 9b's built-in review (`low`, `medium`, `high`, or `max`). If absent, you choose it in Step 9b.
 
 ## Turn Discipline — You Are a Subagent
 
@@ -129,7 +130,7 @@ Return: `STATUS: blocked | REASON: <brief reason>`
 
 ## Step 9: Review the PR
 
-Reviews run in two lanes: an **optional Codex lane** (two reviews from the separately-installed codex plugin, fanned out in the background) and the **mandatory built-in lane** (the `review` skill, run inline while the Codex lane cooks). Launch the Codex lane first, then run the built-in review, then join and synthesize.
+Reviews run in two lanes: an **optional Codex lane** (two reviews from the separately-installed codex plugin, fanned out in the background) and the **mandatory built-in lane** (the `code-review` skill, run inline while the Codex lane cooks). Launch the Codex lane first, then run the built-in review, then join and synthesize.
 
 ### 9a: Launch Codex reviews (optional lane)
 
@@ -156,17 +157,26 @@ The `.done` sentinels are the join mechanism — do not drop them, and do not wa
 
 ### 9b: Built-in review (mandatory lane)
 
-Review the PR by invoking the built-in review skill via the Skill tool. Everything after the PR number is passed to the reviewer as additional instructions — keep them, so the findings come back in an actionable form:
+Review the PR by invoking the built-in code-review skill via the Skill tool. The first argument is the effort level and the second is the review target — always pass both, since with no level given the skill reuses whatever level was typed last, which in a fresh subagent is arbitrary:
 
 ```
-skill: review
-args: <PR-NUMBER> Report each finding with file:line and severity. Focus on defects introduced by this diff, not pre-existing code.
+skill: code-review
+args: <level> <PR-NUMBER>
 ```
 
-If the review skill is not available in your environment, do **NOT** substitute your own review or skip this step — stop and fail loudly so the problem gets fixed. Wait for any running Codex tasks via the 9c sentinel loop first (never abandon them mid-flight), leave the PR open (do not merge), and return:
+**Choosing `<level>`:** if your input specified a review level, use it verbatim — the user pinned it deliberately, so do not second-guess it. Otherwise size it to the diff you just pushed (`git diff --stat <default-branch>...HEAD` is enough to judge):
+
+- **`high`** if the diff has any of: concurrency, async ordering, or shared mutable state; error/retry/failure handling; auth, permissions, secrets, or input validation; data deletion, migration, or anything else hard to reverse; more than ~10 changed files or ~400 changed lines.
+- **`medium`** otherwise — the default for an ordinary single-purpose fix.
+
+Never select `ultra`: it is a user-triggered, billed cloud review that you cannot launch. Say which level you picked and why in one clause of your Step 12 `SUMMARY` (e.g. `review: high (touches retry path)`).
+
+Do **not** pass `--fix`: findings from both lanes are verified and applied together in 9d, and auto-applied fixes would bypass that.
+
+If the code-review skill is not available in your environment, do **NOT** substitute your own review or skip this step — stop and fail loudly so the problem gets fixed. Wait for any running Codex tasks via the 9c sentinel loop first (never abandon them mid-flight), leave the PR open (do not merge), and return:
 
 ```
-STATUS: blocked | REASON: review skill unavailable — PR #<N> created but unreviewed and unmerged
+STATUS: blocked | REASON: code-review skill unavailable — PR #<N> created but unreviewed and unmerged
 ```
 
 ### 9c: Join the Codex lane

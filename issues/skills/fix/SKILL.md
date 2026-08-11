@@ -1,7 +1,7 @@
 ---
 name: fix
-description: Fix GitHub issues by number or query. Pass issue numbers, or instructions like "select all issues whose label begins with 'review-debt'". Add --merge to auto-merge each PR, --follow-up to also queue issues filed during the run (e.g. deferred review findings)
-argument-hint: "<issue-number(s) or selection instructions> [--merge] [--follow-up [depth]]"
+description: Fix GitHub issues by number or query. Pass issue numbers, or instructions like "select all issues whose label begins with 'review-debt'". Add --merge to auto-merge each PR, --follow-up to also queue issues filed during the run (e.g. deferred review findings), --review-level to pin the code-review effort level
+argument-hint: "<issue-number(s) or selection instructions> [--merge] [--follow-up [depth]] [--review-level <low|medium|high|max>]"
 disable-model-invocation: true
 allowed-tools:
   - Bash
@@ -16,7 +16,7 @@ allowed-tools:
 
 > **Recommended: pair long runs with `/goal`.** At the start of a multi-issue or `--merge` run, suggest (once, briefly) that the user set a completion goal, e.g. `/goal every issue in <input> (plus any follow-up issues the run spawns) has a terminal outcome — merged, closed, or blocked with a posted reason — and the Fix-Issue Summary table has been printed; or stop after 30 turns`. The goal evaluator re-prompts on every turn end until the summary exists, so a run cannot die silently mid-queue even if a notification is lost.
 
-You are an orchestrator that coordinates issue-fixing agents. You select issues, launch an `issues:issue-fixer` agent for each one, and manage the serial workflow. Each agent handles its issue end-to-end: an Opus planning subagent verifies the issue still applies and designs the fix, then the agent implements it, creates a PR, reviews it — the built-in `/review` skill, plus Codex and adversarial Codex reviews fanned out in parallel when the codex plugin is installed — and fixes verified findings from the synthesized reports. With `--merge` the agent also merges the PR; otherwise it leaves the PR open for the user and moves on.
+You are an orchestrator that coordinates issue-fixing agents. You select issues, launch an `issues:issue-fixer` agent for each one, and manage the serial workflow. Each agent handles its issue end-to-end: an Opus planning subagent verifies the issue still applies and designs the fix, then the agent implements it, creates a PR, reviews it — the built-in `/code-review` skill, plus Codex and adversarial Codex reviews fanned out in parallel when the codex plugin is installed — and fixes verified findings from the synthesized reports. With `--merge` the agent also merges the PR; otherwise it leaves the PR open for the user and moves on.
 
 ## Input
 
@@ -31,6 +31,8 @@ Check the input for these flags before interpreting the rest as issue numbers or
 - **`--follow-up [depth]`** (alias: `--recursive`) — issues filed *during* the run also get fixed. When a completed agent reports `DEFERRED_ISSUES` (issues created for deferred review findings or other follow-up work), append those numbers to the work queue instead of leaving them for a future run. Without this flag, report deferred issues in the summary but do not process them.
 
   **Depth cap:** the optional number bounds how many generations of follow-ups to chase (default **2**). Issues from the original input are depth 0; issues they spawn are depth 1, and so on. Track each queued issue's depth; when an agent at the max depth reports `DEFERRED_ISSUES`, do not queue them — list them in the summary as unprocessed, noting the cap was hit. `--follow-up 1` chases only direct spawns; a higher number chases deeper.
+
+- **`--review-level <level>`** — pins the effort level of the agent's built-in `/code-review` pass for every issue this run. Accepts `low`, `medium`, `high`, or `max`. Without the flag, each agent sizes the level to its own diff (see the agent's Step 9b). Pass it when you want one level across the run — `low` for a batch of trivial fixes, `high`/`max` for risky ones. Reject `ultra` with a one-line explanation and no fallback: it is a user-triggered, billed cloud review that an agent cannot launch.
 
 Regardless of flags, maintain a **processed set** of issue numbers handled this run (whatever the outcome). Never queue or process a number already in it. This prevents re-picking an issue left open in pr-only mode (issues only auto-close on merge) and, together with the depth cap, is the runaway guard for follow-up mode.
 
@@ -75,9 +77,10 @@ Launch the `issues:issue-fixer` agent in the foreground — pass `run_in_backgro
 Fix GitHub issue #<NUMBER>.
 GitHub username for assigning issues: <GITHUB_USERNAME>
 Merge mode: <"merge" if --merge was passed, otherwise "pr-only">
+Review level: <the --review-level value; omit this line entirely if the flag was not passed>
 ```
 
-Wait for the agent to complete. The agent has its Opus planner verify the issue still applies and design the fix, implements it, creates a PR, reviews it (built-in `/review`, plus parallel Codex reviews when available), fixes verified findings from the synthesized reports, and addresses PR comments. In merge mode it then merges; in pr-only mode it leaves the PR open and returns to the default branch.
+Wait for the agent to complete. The agent has its Opus planner verify the issue still applies and design the fix, implements it, creates a PR, reviews it (built-in `/code-review`, plus parallel Codex reviews when available), fixes verified findings from the synthesized reports, and addresses PR comments. In merge mode it then merges; in pr-only mode it leaves the PR open and returns to the default branch.
 
 ### Step 2: Handle the Result
 
