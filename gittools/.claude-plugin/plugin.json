@@ -1,13 +1,23 @@
 {
   "name": "gittools",
-  "version": "0.5.0",
-  "description": "Git and GitHub workflow utilities for Claude Code — a worktree-safe default-branch fast-forward after merge",
+  "version": "0.6.0",
+  "description": "Git and GitHub workflow utilities for Claude Code — a worktree-safe default-branch fast-forward after merge, and a race-proof wait for PR CI to go green",
   "author": {
     "name": "Nicholas Lonsinger",
     "url": "https://github.com/nicholas-lonsinger"
   },
   "repository": "https://github.com/nicholas-lonsinger/claude-plugins",
   "license": "MIT",
-  "keywords": ["git", "github", "pull-request", "merge", "freshen-main", "worktree"],
+  "keywords": [
+    "git",
+    "github",
+    "pull-request",
+    "merge",
+    "freshen-main",
+    "worktree",
+    "wait-ci",
+    "ci",
+    "checks"
+  ],
   "skills": "./skills/"
 }
