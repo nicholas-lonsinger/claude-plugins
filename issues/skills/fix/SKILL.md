@@ -1,7 +1,7 @@
 ---
 name: fix
 description: Fix GitHub issues by number or query. Pass issue numbers, or instructions like "select all issues whose label begins with 'review-debt'". Add --merge to auto-merge each PR, --follow-up to also queue issues filed during the run (e.g. deferred review findings), --review-level to pin the code-review effort level
-argument-hint: "<issue-number(s) or selection instructions> [--merge] [--follow-up [depth]] [--review-level <low|medium|high|max>]"
+argument-hint: "<issue-number(s) or selection instructions> [--merge] [--follow-up [depth]] [--review-level <low|medium|high|xhigh|max>]"
 disable-model-invocation: true
 allowed-tools:
   - Bash
@@ -32,7 +32,7 @@ Check the input for these flags before interpreting the rest as issue numbers or
 
   **Depth cap:** the optional number bounds how many generations of follow-ups to chase (default **2**). Issues from the original input are depth 0; issues they spawn are depth 1, and so on. Track each queued issue's depth; when an agent at the max depth reports `DEFERRED_ISSUES`, do not queue them — list them in the summary as unprocessed, noting the cap was hit. `--follow-up 1` chases only direct spawns; a higher number chases deeper.
 
-- **`--review-level <level>`** — pins the effort level of the agent's built-in `/code-review` pass for every issue this run. Accepts `low`, `medium`, `high`, or `max`. Without the flag, each agent sizes the level to its own diff (see the agent's Step 9b). Pass it when you want one level across the run — `low` for a batch of trivial fixes, `high`/`max` for risky ones. Reject `ultra` with a one-line explanation and no fallback: it is a user-triggered, billed cloud review that an agent cannot launch.
+- **`--review-level <level>`** — pins the effort level of the agent's built-in `/code-review` pass for every issue this run. Accepts `low`, `medium`, `high`, `xhigh`, or `max`. Without the flag, each agent sizes the level to its own diff (see the agent's Step 9b). Pass it when you want one level across the run — `low` for a batch of trivial fixes, `high`/`xhigh`/`max` for risky ones. Reject `ultra` with a one-line explanation and no fallback: it is a user-triggered, billed cloud review that an agent cannot launch.
 
 Regardless of flags, maintain a **processed set** of issue numbers handled this run (whatever the outcome). Never queue or process a number already in it. This prevents re-picking an issue left open in pr-only mode (issues only auto-close on merge) and, together with the depth cap, is the runaway guard for follow-up mode.
 
