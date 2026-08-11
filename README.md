@@ -71,14 +71,14 @@ needing attention (broken store, missing import line, memory conflicts).
 
 **Requirements:** `git`, `gh` (authenticated), macOS or Linux
 
-### github
+### gittools
 
 Cleanup for the step of the pull request lifecycle that is easy to get wrong —
 moving the local default branch after the merge:
 
 | Skill | Command | Description |
 |-------|---------|-------------|
-| freshen-main | `/github:freshen-main` | Fast-forward the local default branch after a merge, from inside a worktree |
+| freshen-main | `/gittools:freshen-main` | Fast-forward the local default branch after a merge, from inside a worktree |
 
 `scripts/freshen-main.sh` does the work. A squash merge advances the branch on
 the remote and leaves the local ref behind, and a session running inside a git

@@ -18,7 +18,7 @@ Both files must have matching versions:
 
 ```
 .claude-plugin/marketplace.json   # Marketplace index — lists all plugins
-<plugin>/                         # One directory per plugin (statusline, github, issues, claude-memory-sync)
+<plugin>/                         # One directory per plugin (statusline, gittools, issues, claude-memory-sync)
   .claude-plugin/plugin.json      # Plugin manifest (name, version, component paths)
   skills/<skill-name>/SKILL.md    # Skills (invoked as /<plugin>:<skill-name>)
   scripts/                        # Supporting scripts used by skills and hooks
