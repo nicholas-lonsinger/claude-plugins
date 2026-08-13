@@ -20,20 +20,36 @@ Then install individual plugins:
 
 ### statusline
 
-Self-configuring status line for Claude Code. **No command to run — enabling the plugin
-is the entire install.** A session-start hook writes the `statusLine` entry into
-`~/.claude/settings.json` (only if you don't already have one) and keeps the render script
-symlinked to the current plugin version, so updates apply automatically. Disable the plugin
-to turn it off.
+Self-configuring status line for Claude Code, plus a matching row for each subagent in the
+agent panel. **No command to run — enabling the plugin is the entire install.** A
+session-start hook writes the `statusLine` and `subagentStatusLine` entries into
+`~/.claude/settings.json` (each only if you don't already have one) and keeps the render
+scripts symlinked to the current plugin version, so updates apply automatically. Disable
+the plugin to turn it off.
 
-**Features:**
+**Status line:**
 
-- Model name with the current reasoning effort level (e.g. `Opus 4.8 (xhigh)`), reflecting live `/effort` changes
+- Model name with the current reasoning effort level (e.g. `Opus 5 (xhigh)`), reflecting live `/effort` changes
 - Git branch with worktree detection, dirty/untracked flags, and ahead/behind tracking
 - Open pull request for the branch with review state (approved / changes requested / pending / draft)
 - Context window usage percentage — color-coded yellow→red as the window fills — with input/output token counts
 - Session code churn (lines added/removed)
 - Rate limit monitoring for 5-hour and 7-day windows with pace-based color coding
+
+**Subagent rows** replace the default `name · description · token count` with the same
+visual grammar, in columns that line up across rows:
+
+```
+🤖 Opus 5      | 💭 92% / 1M   | ⏱ 3m14s  | 📋 Review the bridged networking diff | 🌿 eager-badger | Grepping the binary
+🤖 Haiku 4.5   | 💭 75% / 200K | ⏱ 1h15m  | 📋 Summarize findings
+🤖 Sonnet 5    | 💭 6% / 200K  | ✗ failed | 📋 Apply the fix batch                | Building
+```
+
+- Each agent's own model and reasoning effort, and its own context window — which differs per model, so the percentage is measured against the right denominator
+- Elapsed time while running; a green check or red cross once finished
+- The agent's worktree, shown only when it is working somewhere other than the session's directory
+- Its live activity, which sits last so a narrow terminal truncates that rather than a column
+- Column widths are measured from the rows actually on screen each tick, by display width, so emoji and colored figures still line up
 
 **Requirements:** `jq`, `git`, macOS or Linux
 
