@@ -26,9 +26,22 @@ session_id=$(echo "$input" | jq -r '.session_id // "default"')
 CACHE_FILE="/tmp/statusline-git-cache-${session_id}"
 CACHE_MAX_AGE=5  # seconds
 
+# GNU is probed first, and the result is validated before it reaches the
+# arithmetic. The two stat flavors disagree on both flags: -c is GNU's format
+# flag and absent on BSD, while -f is BSD's format flag but GNU's *filesystem*
+# status, under which %m succeeds and returns a mount point. Feeding that "/"
+# to $(( )) is a syntax error, which aborts the whole `if cache_is_stale`
+# compound command — so the cached branch never assigns either, and the git
+# segment renders empty from the second refresh onward.
 cache_is_stale() {
-    [ ! -f "$CACHE_FILE" ] || \
-    [ $(($(date +%s) - $(stat -f %m "$CACHE_FILE" 2>/dev/null || stat -c %Y "$CACHE_FILE" 2>/dev/null || echo 0))) -gt $CACHE_MAX_AGE ]
+    [ -f "$CACHE_FILE" ] || return 0
+    local mtime
+    mtime=$(stat -c %Y "$CACHE_FILE" 2>/dev/null || stat -f %m "$CACHE_FILE" 2>/dev/null || echo "")
+    # Anything non-numeric means we cannot age the cache: refresh rather than
+    # trust it, so an unreadable timestamp degrades to "no cache", never to a
+    # blank segment.
+    case "$mtime" in ''|*[!0-9]*) return 0 ;; esac
+    [ $(( $(date +%s) - mtime )) -gt "$CACHE_MAX_AGE" ]
 }
 
 if cache_is_stale; then

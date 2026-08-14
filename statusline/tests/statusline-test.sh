@@ -430,6 +430,51 @@ assert_has "the surrounding text survives flattening" "control chars" "$(row a)"
 assert_eq "no trailing separator on a row with empty columns" 1 \
   "$(row a | awk '{print ($0 ~ /[ |]$/) ? 0 : 1}')"
 
+# ---------- 12: the git cache reads back under either stat flavor ----------
+# Every other render here uses a fresh session id, which only ever exercises
+# the cache-miss path. These reuse one id so the second render reads the cache
+# — the path that has to age the file, and the one that renders on every tick
+# of a real session after the first.
+echo "== 12: git cache across stat flavors =="
+mkdir -p "$SCRATCH/stub-gnu" "$SCRATCH/stub-bsd"
+cat > "$SCRATCH/stub-gnu/stat" <<'STUB'
+#!/bin/sh
+# GNU: -c is the format flag, and -f is *filesystem* status, under which %m
+# succeeds and prints a mount point rather than a timestamp.
+case "${1:-}" in
+  -c) date -r "$3" +%s ;;
+  -f) printf '/\n' ;;
+  *)  exit 1 ;;
+esac
+STUB
+cat > "$SCRATCH/stub-bsd/stat" <<'STUB'
+#!/bin/sh
+# BSD: -f is the format flag, and there is no -c at all.
+case "${1:-}" in
+  -f) date -r "$3" +%s ;;
+  *)  exit 1 ;;
+esac
+STUB
+chmod +x "$SCRATCH/stub-gnu/stat" "$SCRATCH/stub-bsd/stat"
+cached_render() { # cached_render <tag> <stub-dir>; renders twice on one session id
+  local sid="sltest-$$-$1" payload
+  SESSIONS+=("$sid")
+  rm -f "/tmp/statusline-git-cache-$sid"
+  payload=$(printf '{"session_id": "%s", "workspace": {"current_dir": "%s"}}' "$sid" "$REPO")
+  printf '%s' "$payload" | (cd "$SCRATCH" && env HOME="$SCRATCH" PATH="$2:$PATH" bash "$MAIN") >/dev/null 2>&1
+  OUT=$(printf '%s' "$payload" | (cd "$SCRATCH" && env HOME="$SCRATCH" PATH="$2:$PATH" bash "$MAIN") 2>"$SCRATCH/err"); RC=$?
+}
+cached_render 60 "$SCRATCH/stub-gnu"
+assert_eq "a cached read under GNU stat exits 0" 0 "$RC"
+assert_has "a cached read under GNU stat still renders git state" "📦 demo-proj / main"
+assert_eq "a cached read under GNU stat logs nothing to stderr" "" "$(cat "$SCRATCH/err")"
+cached_render 61 "$SCRATCH/stub-bsd"
+assert_eq "a cached read under BSD stat exits 0" 0 "$RC"
+assert_has "a cached read under BSD stat still renders git state" "📦 demo-proj / main"
+assert_eq "a cached read under BSD stat logs nothing to stderr" "" "$(cat "$SCRATCH/err")"
+cached_render 62 "$SCRATCH/stub-missing"
+assert_has "an unreadable timestamp falls back to a fresh read" "📦 demo-proj / main"
+
 # ---------- summary ----------
 echo "=================================="
 echo "PASS=$PASS FAIL=$FAIL"
