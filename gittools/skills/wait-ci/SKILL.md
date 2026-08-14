@@ -29,9 +29,15 @@ After pushing, from inside the repository, as a **background** Bash command
 ```
 
 The PR number defaults to the current branch's PR, and the expected head SHA
-to `git rev-parse HEAD` — run it from the worktree you pushed from, or pass
-`--sha` explicitly. `--timeout <seconds>` bounds one invocation (default
-3600), `--repo <owner/repo>` and `--remote <name>` cover non-default setups.
+to `git rev-parse HEAD` — right only in the checkout the push came from. From
+anywhere else (another worktree, a session that never pushed), pass `--sha`:
+the SHA you pushed, or the PR's reported head — `gh pr view <n> --json
+headRefOid --jq .headRefOid` — to verify the PR as it stands (that forgoes
+the push-landed proof, since the expectation then comes from the same API).
+With an explicit PR number, a checkout whose upstream is not the PR's head
+branch is refused (exit 1) rather than silently pinning the wrong commit.
+`--timeout <seconds>` bounds one invocation (default 3600), `--repo
+<owner/repo>` and `--remote <name>` cover non-default setups.
 
 ## Reading the result
 

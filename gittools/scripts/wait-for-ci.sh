@@ -38,7 +38,10 @@ Usage: wait-for-ci.sh [<pr-number>] [--sha <sha>] [--timeout <seconds>]
                       [--repo <owner/repo>] [--remote <name>]
 
   <pr-number>   PR to watch. Default: the PR for the current branch.
-  --sha         Head SHA the PR must be at. Default: git rev-parse HEAD.
+  --sha         Head SHA the PR must be at. Default: git rev-parse HEAD,
+                which is only right in the checkout the push came from; with
+                an explicit <pr-number>, a checkout whose upstream is not the
+                PR's head branch is refused rather than guessed at.
   --timeout     Overall deadline in seconds (default 3600). On expiry the
                 script exits 3; re-run it to keep waiting.
   --repo        owner/repo (default: inferred from the working directory).
@@ -52,7 +55,9 @@ EOF
 }
 
 PR=""
+PR_GIVEN=0
 EXPECTED_SHA=""
+SHA_DEFAULTED=0
 TIMEOUT=3600
 REPO=""
 REMOTE="origin"
@@ -65,7 +70,7 @@ while [ $# -gt 0 ]; do
     --remote) REMOTE="${2:?--remote needs a value}"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     -*) printf 'wait-for-ci: unknown option: %s\n' "$1" >&2; usage >&2; exit 1 ;;
-    *) PR="$1"; shift ;;
+    *) PR="$1"; PR_GIVEN=1; shift ;;
   esac
 done
 
@@ -104,10 +109,40 @@ fi
 if [ -z "$EXPECTED_SHA" ]; then
   EXPECTED_SHA=$(git rev-parse HEAD 2>/dev/null) \
     || { say "not inside a git repository — pass --sha explicitly"; exit 1; }
+  SHA_DEFAULTED=1
 else
   # Expand a short SHA when a repo is available; otherwise take it as-is.
   EXPECTED_SHA=$(git rev-parse "$EXPECTED_SHA" 2>/dev/null || printf '%s' "$EXPECTED_SHA")
 fi
+
+# The defaulted SHA is only meaningful when this checkout is the one that
+# pushed the PR's head branch. When the PR number was given explicitly that
+# association is unverified — a checkout sitting on any other branch pins the
+# wrong commit, and every later verdict then describes the wrong push. So
+# compare HEAD's upstream against the PR's head branch and refuse to guess on
+# a mismatch. Detached HEAD, no upstream, or a cross-repository PR is
+# inconclusive: proceed, and the mismatch verdicts carry the provenance hint
+# instead.
+confirm_defaulted_sha() {
+  _info=$(ghq pr view "$PR" --json headRefName,isCrossRepository \
+    --jq '[.headRefName, (.isCrossRepository | tostring)] | @tsv') || return 0
+  _branch=${_info%%"$(printf '\t')"*}
+  _cross=${_info##*"$(printf '\t')"}
+  [ "$_cross" = "true" ] && return 0
+  _upstream=$(git rev-parse --abbrev-ref '@{upstream}' 2>/dev/null) || return 0
+  [ "$_upstream" = "$REMOTE/$_branch" ] && return 0
+  say "refusing to default the expected SHA: this checkout tracks $_upstream, but PR #$PR's head branch is $_branch"
+  say "pass --sha explicitly: the commit you pushed ($(printf '%.8s' "$EXPECTED_SHA") if that really is this checkout's HEAD), or the PR's reported head — gh pr view $PR --json headRefOid --jq .headRefOid — to verify the PR as it stands"
+  exit 1
+}
+[ "$PR_GIVEN" -eq 1 ] && [ "$SHA_DEFAULTED" -eq 1 ] && confirm_defaulted_sha
+
+# Appended to verdicts that suggest the expected SHA itself may be wrong.
+sha_hint() {
+  [ "$SHA_DEFAULTED" -eq 1 ] \
+    && printf ' (the expected SHA was defaulted from the local HEAD — if this is not the checkout you pushed from, re-run with --sha)'
+  return 0
+}
 
 DEADLINE=$((SECONDS + TIMEOUT))
 
@@ -240,7 +275,7 @@ verify_remote_ref() {
   if [ -z "$_remote_sha" ]; then
     finish 4 push-missing "branch '$_branch' does not exist on $REMOTE — the push never landed (a bare 'git push' with mismatched local/remote branch names silently no-ops; push with an explicit refspec: git push $REMOTE HEAD:$_branch)"
   fi
-  finish 4 push-missing "$REMOTE/$_branch is at $(printf '%.8s' "$_remote_sha"), expected $(printf '%.8s' "$EXPECTED_SHA") — the push didn't land (push with an explicit refspec: git push $REMOTE HEAD:$_branch; if a newer commit was pushed intentionally, re-run with --sha)"
+  finish 4 push-missing "$REMOTE/$_branch is at $(printf '%.8s' "$_remote_sha"), expected $(printf '%.8s' "$EXPECTED_SHA") — the push didn't land (push with an explicit refspec: git push $REMOTE HEAD:$_branch; if a newer commit was pushed intentionally, re-run with --sha)$(sha_hint)"
 }
 
 # --- stage 1: confirm the PR is open and its head is the expected SHA -------
@@ -264,7 +299,7 @@ while :; do
     if [ "$PUSH_CONFIRMED" -eq 1 ]; then
       finish 4 head-mismatch "the push landed on $REMOTE but the PR head is still $(printf '%.8s' "$SNAP_HEAD") — the API never caught up; re-run to keep waiting"
     fi
-    finish 4 head-mismatch "PR head is $(printf '%.8s' "$SNAP_HEAD"), expected $(printf '%.8s' "$EXPECTED_SHA") — did the push land? (a bare 'git push' with mismatched local/remote branch names silently no-ops; push with an explicit refspec and re-run)"
+    finish 4 head-mismatch "PR head is $(printf '%.8s' "$SNAP_HEAD"), expected $(printf '%.8s' "$EXPECTED_SHA") — did the push land? (a bare 'git push' with mismatched local/remote branch names silently no-ops; push with an explicit refspec and re-run)$(sha_hint)"
   fi
   say "PR head is $(printf '%.8s' "$SNAP_HEAD"), waiting for the push to land…"
   sleep 5
