@@ -422,6 +422,30 @@ sub_render '{"columns": 120, "tasks": [{"id": "a", "description": "an extravagan
 assert_has "an overlong identity is clipped" "…" "$(row a)"
 assert_eq "the clip is capped well inside the terminal width" 1 \
   "$(row a | awk '{print (length($0) <= 60) ? 1 : 0}')"
+
+echo "-- right-aligned state --"
+# Codepoint counts stand in for cell counts: 📋 is the only double-width glyph
+# in these rows and the color escapes are stripped first, so a row padded to 80
+# cells is exactly 79 codepoints.
+vislen() { printf '%s' "$1" | jq -Rs 'gsub("\u001b\\[[0-9;]*m"; "") | length'; }
+sub_render '{"columns": 80, "tasks": [
+  {"id": "a", "description": "x", "status": "completed"},
+  {"id": "b", "description": "x", "status": "running", "startTime": '"$(now_ms)"'}
+]}'
+assert_re "the state is flushed right, not joined mid-row" '📋 x {2,}' "$(row a)"
+assert_lacks "no separator precedes an aligned state" "| ${GRN}✓" "$(row a)"
+assert_eq "the row fills the usable width exactly" 79 "$(vislen "$(row a)")"
+assert_eq "rows with different states share one right edge" \
+  "$(vislen "$(row a)")" "$(vislen "$(row b)")"
+sub_render '{"columns": 60, "tasks": [{"id": "a", "description": "task", "status": "completed",
+  "label": "an activity label far too long for the sixty column terminal"}]}'
+assert_has "the tail is clipped to protect the aligned state" "…" "$(row a)"
+assert_re "the clipped row still ends in the state" 'completed$' "$(row a)"
+assert_eq "the clipped row still fills the width exactly" 59 "$(vislen "$(row a)")"
+sub_render '{"columns": 16, "tasks": [{"id": "a", "description": "task", "status": "completed"}]}'
+assert_re "a row too narrow to align falls back to the separator" '\| .*completed$' "$(row a)"
+sub_render '{"tasks": [{"id": "a", "description": "only identity"}]}'
+assert_re "columns empty on every row leave no leading separators" '^📋 only identity$' "$(row a)"
 # Written as JSON \u escapes rather than raw bytes: a control character in
 # the source does not survive editing reliably.
 sub_render '{"tasks": [{"id": "a", "description": "control\u0007chars\u001b[31m here"}]}'

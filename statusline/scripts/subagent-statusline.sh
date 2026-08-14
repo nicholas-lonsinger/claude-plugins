@@ -6,10 +6,15 @@
 #
 # Renders each row in the main status line's visual grammar: " | "-joined segments,
 # one emoji per segment, K/M token formatting, and the same 70%/90% context coloring.
-# The bounded columns lead — model, context, state — because their widths barely move, so
-# the eye can scan straight down them. The prose columns follow in order of how much they
-# vary: identity, then the free-flowing tail. The row truncates from the right, so what
-# gets eaten first is the volatile activity label rather than anything structural.
+# The bounded columns lead — model, context — because their widths barely move, so the
+# eye can scan straight down them; identity and the free-flowing tail follow. The state
+# column — the elapsed clock or a terminal glyph — is flushed to the right edge instead:
+# the payload's `columns` field is the usable row width, so padding the gap out to
+# exactly that width hangs every row's clock off the same edge. The renderer eats
+# overflow from the right — exactly where the state now sits — so the fit is guaranteed
+# here rather than left to it: the volatile tail is clipped to whatever width the row
+# has left before the gap is padded, and a row too narrow to align at all falls back to
+# joining the state in sequence.
 #
 # Columns line up across rows. Every visible row arrives in a single payload, so the widths
 # are measured from the actual content on each tick rather than guessed at — no static
@@ -118,6 +123,7 @@ printf '%s\n' "$input" | jq -c '
 
   (now * 1000) as $now
   | .cwd as $session_cwd
+  # Documented as the usable row width — the value to fill to, not the raw terminal width.
   | (.columns // 120) as $cols
 
   # Collected rather than streamed, because a column cannot be sized until every row that
@@ -163,14 +169,14 @@ printf '%s\n' "$input" | jq -c '
 
           # Terminal states borrow the PR glyphs from the main line. They cannot show a
           # duration: the task carries an endTime internally, but it is never serialized
-          # into this payload.
+          # into this payload. Rendered flush right in the final assembly, not joined here.
           state: ( if   $t.status == "running"   then "⏱ " + elapsed($now - ($t.startTime // $now))
                    elif $t.status == "completed" then color("32"; "✓") + " completed"
                    elif ($t.status == "failed" or $t.status == "killed") then color("31"; "✗") + " " + $t.status
                    else "" end ),
 
-          # Free-flowing tail: never padded, and first to be truncated away on a narrow
-          # terminal, which is why the volatile activity label lives here.
+          # Free-flowing tail: never padded, and clipped away first in the final assembly
+          # when the row runs short, which is why the volatile activity label lives here.
           tail: ( [ ( ($t.cwd // "") as $c
                       | if ($c | type) == "string" and $c != "" and $c != $session_cwd
                         then (($c | split("/") | map(select(. != "")) | last) // "") as $b
@@ -188,17 +194,30 @@ printf '%s\n' "$input" | jq -c '
   | (($rows | map(.model | dwidth) | max) // 0) as $w_model
   | (($rows | map(.ident | dwidth) | max) // 0) as $w_ident
   | (($rows | map(.ctx   | dwidth) | max) // 0) as $w_ctx
-  | (($rows | map(.state | dwidth) | max) // 0) as $w_state
 
-  # A row missing a column still reserves its width, so the columns beside it stay true.
+  # A row missing a column still reserves its width, so the columns beside it stay true —
+  # but a column empty on EVERY row has zero width, and joining it would leave orphaned
+  # leading separators, so those are dropped rather than joined.
   | $rows[]
+  | ( [ (.model | pad($w_model)),
+        (.ctx   | pad($w_ctx)),
+        (.ident | pad($w_ident)) ]
+      | map(select(. != "")) | join(" | ") ) as $head
+
+  # The state is flushed right: the tail may only spend what the head and the state
+  # leave over (their " | " and two-space gutters included), and is clipped to that
+  # before the gap is measured, so the state always lands inside the usable width.
+  | (.state | dwidth) as $state_w
+  | ($cols - ($head | dwidth) - 3 - (if .state == "" then 0 else $state_w + 2 end)) as $tail_room
+  | (if .tail == "" or $tail_room < 2 then "" else (.tail | clip($tail_room)) end) as $tail
+  | ( ($head + (if $tail == "" then "" else " | " + $tail end)) | sub("[ |]+$"; "") ) as $left
+  | ($cols - ($left | dwidth) - $state_w) as $gap
   | { id: .id,
-      content: ( [ (.model | pad($w_model)),
-                   (.ctx   | pad($w_ctx)),
-                   (.state | pad($w_state)),
-                   (.ident | pad($w_ident)),
-                   .tail ]
-                 | join(" | ") | sub("[ |]+$"; "") ) }
+      content: ( if .state == "" then $left
+                 elif $gap >= 2 then $left + (" " * $gap) + .state
+                 # No room to align — an oversized model id, a tiny terminal. Fall back
+                 # to joining in sequence and let the renderer truncate the overflow.
+                 else $left + " | " + .state end ) }
 ' 2>/dev/null
 
 exit 0

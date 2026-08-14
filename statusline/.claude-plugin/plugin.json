@@ -1,6 +1,6 @@
 {
   "name": "statusline",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "Self-configuring Claude Code status line — model/effort, git & PR status, context window, session churn, and rate-limit monitoring, plus per-subagent rows in the agent panel",
   "author": {
     "name": "Nicholas Lonsinger",
