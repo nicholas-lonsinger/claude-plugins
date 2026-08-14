@@ -16,5 +16,12 @@ jobs:
         run: git ls-files '*.sh' | xargs shellcheck
       - name: JSON manifests parse
         run: git ls-files '*.json' | xargs -n1 jq empty
-      - name: claude-memory-sync test harness
-        run: bash claude-memory-sync/tests/memtest.sh
+      - name: Plugin test harnesses (every tracked <plugin>/tests/*.sh)
+        run: |
+          # Discovered, not listed: a harness that is committed but never run
+          # reads as coverage that is not there. Same `git ls-files` sweep the
+          # lint steps use, so a new harness executes the moment it lands.
+          git ls-files '*/tests/*.sh' | while IFS= read -r harness; do
+            echo "== $harness =="
+            bash "$harness" || exit 1
+          done

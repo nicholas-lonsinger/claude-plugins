@@ -3,6 +3,12 @@
 # Read JSON session data from stdin
 input=$(cat)
 
+# Normalize once, so every `// default` below actually fires. On unparseable or
+# empty stdin each individual jq call would otherwise fail separately, leaving
+# every value an empty string rather than its default — which renders as debris
+# ("📓 + -" for absent churn) instead of a clean zeroed line.
+printf '%s\n' "$input" | jq -e . >/dev/null 2>&1 || input='{}'
+
 # --- Model + effort ---
 model_name=$(echo "$input" | jq -r '.model.display_name // "ERROR"' | sed 's/ ([^)]*context)$//')
 # effort.level is low|medium|high|xhigh|max, reflects live /effort changes; absent if the model has no effort param
@@ -20,9 +26,22 @@ session_id=$(echo "$input" | jq -r '.session_id // "default"')
 CACHE_FILE="/tmp/statusline-git-cache-${session_id}"
 CACHE_MAX_AGE=5  # seconds
 
+# GNU is probed first, and the result is validated before it reaches the
+# arithmetic. The two stat flavors disagree on both flags: -c is GNU's format
+# flag and absent on BSD, while -f is BSD's format flag but GNU's *filesystem*
+# status, under which %m succeeds and returns a mount point. Feeding that "/"
+# to $(( )) is a syntax error, which aborts the whole `if cache_is_stale`
+# compound command — so the cached branch never assigns either, and the git
+# segment renders empty from the second refresh onward.
 cache_is_stale() {
-    [ ! -f "$CACHE_FILE" ] || \
-    [ $(($(date +%s) - $(stat -f %m "$CACHE_FILE" 2>/dev/null || stat -c %Y "$CACHE_FILE" 2>/dev/null || echo 0))) -gt $CACHE_MAX_AGE ]
+    [ -f "$CACHE_FILE" ] || return 0
+    local mtime
+    mtime=$(stat -c %Y "$CACHE_FILE" 2>/dev/null || stat -f %m "$CACHE_FILE" 2>/dev/null || echo "")
+    # Anything non-numeric means we cannot age the cache: refresh rather than
+    # trust it, so an unreadable timestamp degrades to "no cache", never to a
+    # blank segment.
+    case "$mtime" in ''|*[!0-9]*) return 0 ;; esac
+    [ $(( $(date +%s) - mtime )) -gt "$CACHE_MAX_AGE" ]
 }
 
 if cache_is_stale; then
@@ -103,8 +122,10 @@ if [ "$used_pct" = "null" ] || [ "$window_size" = "null" ]; then
 elif ! [[ "$used_pct" =~ ^[0-9]+([.][0-9]+)?$ ]] || ! [[ "$window_size" =~ ^[0-9]+$ ]]; then
     context_info="ERROR"
 else
+    # The unit is chosen from the *rounded* thousands, not the raw value: at
+    # k=999.999 the K branch would print "1000K" rather than promoting to "1M".
     fmt_tokens() {
-        awk "BEGIN {k=$1/1000; if (k>=1000) printf \"%.0fM\", k/1000; else printf \"%.0fK\", k}"
+        awk "BEGIN {k=$1/1000; if (k>=999.5) printf \"%.0fM\", k/1000; else printf \"%.0fK\", k}"
     }
     input_fmt=$(fmt_tokens "$input_tokens")
     output_fmt=$(fmt_tokens "$output_tokens")
@@ -167,14 +188,24 @@ seven_day_resets=$(echo "$input" | jq -r '.rate_limits.seven_day.resets_at // em
 [ -n "$five_hour_pct_raw" ] && five_hour_pct=$(printf "%.0f" "$five_hour_pct_raw") || five_hour_pct=""
 [ -n "$seven_day_pct_raw" ] && seven_day_pct=$(printf "%.0f" "$seven_day_pct_raw") || seven_day_pct=""
 
+# Each window is rendered on its own terms. Pacing a window needs both its
+# percentage and its reset time, so a half-populated payload drops that half
+# rather than rendering a bare "7d: %" off an empty arithmetic expression.
+rate_window() { # rate_window <label> <pct> <raw pct> <resets_at> <window secs>
+    [ -n "$2" ] && [ -n "$4" ] || return 0
+    printf '%s: %s %s' "$1" "$(color_for_pct "$2" "$3" "$4" "$5")" "$(format_countdown "$4")"
+}
+
+rate_parts=()
+five_part=$(rate_window "5h" "$five_hour_pct" "$five_hour_pct_raw" "$five_hour_resets" 18000)
+seven_part=$(rate_window "7d" "$seven_day_pct" "$seven_day_pct_raw" "$seven_day_resets" 604800)
+[ -n "$five_part" ] && rate_parts+=("$five_part")
+[ -n "$seven_part" ] && rate_parts+=("$seven_part")
+
 rate_section=""
-if [ -n "$five_hour_pct" ]; then
-    five_color=$(color_for_pct "$five_hour_pct" "$five_hour_pct_raw" "$five_hour_resets" 18000)
-    five_countdown=$(format_countdown "$five_hour_resets")
-    seven_color=$(color_for_pct "$seven_day_pct" "$seven_day_pct_raw" "$seven_day_resets" 604800)
-    seven_countdown=$(format_countdown "$seven_day_resets")
-    rate_section=$(printf '🔋 5h: %s %s · 7d: %s %s' "$five_color" "$five_countdown" "$seven_color" "$seven_countdown")
-fi
+for part in "${rate_parts[@]}"; do
+    if [ -z "$rate_section" ]; then rate_section="🔋 $part"; else rate_section="$rate_section · $part"; fi
+done
 
 # --- Session churn (lines added/removed this session) ---
 lines_added=$(echo "$input" | jq -r '.cost.total_lines_added // 0')

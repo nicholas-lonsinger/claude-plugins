@@ -24,7 +24,8 @@ Both files must have matching versions:
   scripts/                        # Supporting scripts used by skills and hooks
   hooks/hooks.json                # Session hooks (optional; auto-active when plugin enabled)
   templates/                      # Files skills copy out to stable paths (optional)
-.github/workflows/checks.yml      # CI: shell lint + JSON parse + memory-sync tests
+  tests/<name>.sh                 # Test harness (optional; CI runs every one it finds)
+.github/workflows/checks.yml      # CI: shell lint + JSON parse + plugin test harnesses
 .shellcheckrc                     # Project-wide shellcheck directives (follow sourced libs)
 ```
 
@@ -36,15 +37,32 @@ other's files.
 CI (`checks.yml`) runs on every PR and push to `main`: `bash -n` +
 `shellcheck` over **every** tracked script (project-wide directives live in
 `.shellcheckrc` — new scripts get coverage automatically, keep them
-warning-free), `jq empty` over every tracked JSON manifest, and the
-claude-memory-sync test harness (hermetic: scratch `$HOME`, local bare-repo
-origin, stubbed `claude`). Run the same locally before pushing:
+warning-free), `jq empty` over every tracked JSON manifest, and **every**
+tracked `<plugin>/tests/*.sh` harness. Harnesses are discovered by glob, not
+listed, so a new one runs from the moment it is committed. Run the same
+locally before pushing:
 
 ```bash
 git ls-files '*.sh' | xargs shellcheck
 git ls-files '*.json' | xargs -n1 jq empty
-bash claude-memory-sync/tests/memtest.sh
+git ls-files '*/tests/*.sh' | xargs -n1 bash
 ```
+
+## Writing a Test Harness
+
+A harness is a plain script that CI can run as one step, so it owns its own
+reporting and exit status: `set -u` without `set -e` (one failed assertion
+reports and the run continues), `ok`/`fail` counters, and `[ "$FAIL" -eq 0 ]`
+as the last line.
+
+Harnesses must be hermetic — they run on a contributor's machine as readily as
+on a runner. Build fixtures under `${TMPDIR:-/tmp}` and remove them on exit,
+and neutralize the session environment the scripts under test read: Claude Code
+exports `CLAUDE_PLUGIN_DATA`, and a hook that resolves its state dir from that
+variable will reach straight past a scratch `$HOME` to the contributor's real
+data. Anything a script under test resolves from the environment — `$HOME` for
+git's global config included — has to be pinned by the harness, or the run
+reports on the machine rather than on the code.
 
 ## Adding a New Skill
 
