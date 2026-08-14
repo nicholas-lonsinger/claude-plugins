@@ -5,12 +5,16 @@
 # throwaway HOME with a local bare repo as origin. No network, no real state.
 set -u
 
-# Both hooks resolve their state dir from $CLAUDE_PLUGIN_DATA and only fall
-# back to $HOME. Claude Code exports that variable, so a harness run from
-# inside a session would read the real install marker and drive the real store
-# despite the scratch HOME below. Clearing it puts every invocation back on the
-# scratch HOME, which is what the assertions here are written against.
-unset CLAUDE_PLUGIN_DATA
+# Three variables are read ahead of — or instead of — the scratch HOME below:
+# $CLAUDE_PLUGIN_DATA names the state dir holding the install marker,
+# $CLAUDE_PROJECTS_DIR names where the memory symlinks get written, and
+# $CLAUDE_SYNC_ACTIVE is the re-entrancy guard that makes both hooks exit
+# immediately. Claude Code exports the first, and these scripts export the
+# third around the headless `claude -p` the merge driver runs — so a harness
+# invoked from inside either context reads real state or silently no-ops.
+# Clearing all three puts every invocation back on the scratch HOME, which is
+# what the assertions here are written against.
+unset CLAUDE_PLUGIN_DATA CLAUDE_PROJECTS_DIR CLAUDE_SYNC_ACTIVE
 
 WT="${1:-$(cd "$(dirname "$0")/../.." && pwd)}"
 SCRIPTS="$WT/claude-memory-sync/scripts"
@@ -462,6 +466,38 @@ assert "user-scope change committed and pushed" test "$(env HOME="$SCRATCH" git 
 env HOME="$SCRATCH" git -C "$TMP2" pull -q origin main
 assert "second machine sees the global memory" grep -q 'a global fact' "$TMP2/user/round-trip-fact.md"
 assert "second machine sees the index line" grep -q 'Round-trip fact' "$TMP2/user/MEMORY.md"
+
+# ---------- 24: single-flight lock ----------
+# Both lock branches fail silently in production. One that never releases
+# wedges sync permanently, with no symptom beyond memory quietly going stale;
+# one that fails open lets two runs race the same git repo, which is the
+# corruption the lock exists to prevent.
+echo "== 24: single-flight lock =="
+LOCK="$DATA/sync.lock"
+assert "lock released by the preceding runs" test ! -d "$LOCK"
+
+LPROJ="$SCRATCH/dev/lock-sim"
+mkdir -p "$LPROJ"
+git -C "$LPROJ" init -q -b main
+git -C "$LPROJ" remote add origin "https://github.com/testowner/lock-sim.git"
+LSLUG="$(slug "$LPROJ")"
+LSDIR="$STORE/memory/github-testowner-lock-sim"
+mkdir -p "$PROJECTS/$LSLUG/memory"
+printf '# Memory index\n- lock fact\n' > "$PROJECTS/$LSLUG/memory/MEMORY.md"
+
+mkdir "$LOCK"                       # stand in for a run already in flight
+run_sync "$LPROJ" push
+assert "held lock defers the run" test ! -L "$PROJECTS/$LSLUG/memory"
+assert "held lock adopts nothing" test ! -d "$LSDIR"
+assert "held lock is left for its owner" test -d "$LOCK"
+
+# A fixed past date rather than now-minus-N: the reap threshold is 10 minutes,
+# and date's relative-offset flag is spelled differently on BSD and GNU.
+touch -t 202001010000 "$LOCK"
+run_sync "$LPROJ" push
+assert "stale lock reaped, run proceeds" test -L "$PROJECTS/$LSLUG/memory"
+assert "reaped run adopted into the store" test -d "$LSDIR"
+assert "lock released after the reaping run" test ! -d "$LOCK"
 
 # ---------- summary ----------
 echo "=================================="
