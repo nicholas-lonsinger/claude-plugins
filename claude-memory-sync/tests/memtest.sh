@@ -5,6 +5,13 @@
 # throwaway HOME with a local bare repo as origin. No network, no real state.
 set -u
 
+# Both hooks resolve their state dir from $CLAUDE_PLUGIN_DATA and only fall
+# back to $HOME. Claude Code exports that variable, so a harness run from
+# inside a session would read the real install marker and drive the real store
+# despite the scratch HOME below. Clearing it puts every invocation back on the
+# scratch HOME, which is what the assertions here are written against.
+unset CLAUDE_PLUGIN_DATA
+
 WT="${1:-$(cd "$(dirname "$0")/../.." && pwd)}"
 SCRIPTS="$WT/claude-memory-sync/scripts"
 TPL="$WT/claude-memory-sync/templates"

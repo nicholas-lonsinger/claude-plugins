@@ -11,7 +11,7 @@
       "name": "statusline",
       "description": "Self-configuring Claude Code status line — model/effort, git & PR status, context window, session churn, and rate-limit monitoring, plus per-subagent rows in the agent panel",
       "source": "./statusline",
-      "version": "1.2.0"
+      "version": "1.3.0"
     },
     {
       "name": "gittools",
@@ -29,7 +29,7 @@
       "name": "claude-memory-sync",
       "description": "Cross-machine sync for Claude Code's per-project memory and user-scope instructions — git-backed private state repo with AI-assisted semantic merge",
       "source": "./claude-memory-sync",
-      "version": "0.5.5"
+      "version": "0.5.6"
     }
   ]
 }

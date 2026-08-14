@@ -94,9 +94,11 @@ printf '%s\n' "$input" | jq -c '
     if dwidth <= $w then .
     else (explode | .[0:($w - 1)] | implode) + "\u2026" end;
 
+  # The unit is chosen from the *rounded* thousands, not the raw value: at
+  # $k = 999.999 the K branch would render "1000K" rather than promoting to "1M".
   def fmt_tokens:
     (. / 1000) as $k
-    | if $k >= 1000 then (($k / 1000 | round | tostring) + "M")
+    | if ($k | round) >= 1000 then (($k / 1000 | round | tostring) + "M")
       else (($k | round | tostring) + "K") end;
 
   # Fixed thresholds, matching the main line: context just fills up, there is no pace to beat.
