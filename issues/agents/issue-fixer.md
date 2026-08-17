@@ -150,7 +150,7 @@ node "<companion-path>" review --base <default-branch> --scope branch > "<tmpdir
 ```
 
 ```bash
-node "<companion-path>" adversarial-review --base <default-branch> --scope branch "Challenge whether this change correctly and completely fixes issue #<NUMBER> — question the chosen approach, its assumptions, and unhandled edge cases." > "<tmpdir>/codex-adversarial.out" 2>&1; touch "<tmpdir>/codex-adversarial.done"
+node "<companion-path>" adversarial-review --base <default-branch> --scope branch "Challenge whether this change correctly and completely fixes issue #<NUMBER> — question the chosen approach, its assumptions, and the cases it leaves unhandled within the behavior the issue describes. Pre-existing defects elsewhere in the files it touches are outside this review's scope." > "<tmpdir>/codex-adversarial.out" 2>&1; touch "<tmpdir>/codex-adversarial.done"
 ```
 
 The `.done` sentinels are the join mechanism — do not drop them, and do not wait on these tasks yet.
@@ -164,10 +164,15 @@ skill: code-review
 args: <level> <PR-NUMBER>
 ```
 
-**Choosing `<level>`:** if your input specified a review level, use it verbatim — the user pinned it deliberately, so do not second-guess it. Otherwise size it to the diff you just pushed (`git diff --stat <default-branch>...HEAD` is enough to judge):
+**Choosing `<level>`:** take the first of these that applies.
 
-- **`high`** if the diff has any of: concurrency, async ordering, or shared mutable state; error/retry/failure handling; auth, permissions, secrets, or input validation; data deletion, migration, or anything else hard to reverse; more than ~10 changed files or ~400 changed lines.
-- **`medium`** otherwise — the default for an ordinary single-purpose fix.
+1. **Your input pinned a level** — use it verbatim; the user chose it deliberately, so do not second-guess it.
+2. **The project documents its own review-level convention** (`CLAUDE.md`, `AGENTS.md`, or a doc they point at) — follow it. It encodes which of this repo's subsystems earn a recall-biased read, which the heuristic below cannot know.
+3. **Otherwise size it to the diff you just pushed** (`git diff --stat <default-branch>...HEAD` is enough to judge):
+   - **`high`** if the diff *itself* introduces or reworks any of: concurrency, async ordering, or shared mutable state; error/retry/failure handling; auth, permissions, secrets, or input validation; data deletion, migration, or anything else hard to reverse — or if it exceeds ~10 changed files or ~400 changed lines. Judge the change, not the code it lands in: a one-line fix inside a concurrent subsystem is not a concurrency change, and in a codebase where every file carries async work the file-level reading selects `high` every time.
+   - **`medium`** otherwise — the default for an ordinary single-purpose fix.
+
+The levels trade precision against recall. `medium` reports findings a maintainer would act on; `high` and above are asked to err on the side of surfacing, so uncertain and adjacent findings arrive by design — each costing a verification pass in 9d, and some a tracker entry that outlives this run. `high` on every diff is not the cautious default: it is how one fix becomes a queue of neighboring issues.
 
 Never select `ultra`: it is a user-triggered, billed cloud review that you cannot launch. Say which level you picked and why in one clause of your Step 12 `SUMMARY` (e.g. `review: high (touches retry path)`).
 
@@ -200,12 +205,13 @@ The reviews only report — acting on the synthesized list is your job:
 
 1. **Verify each finding against the code before fixing it.** The reviewers work from the diff and have no verification pass, so false positives happen. Read the code the finding points at and confirm the defect is real; drop findings that don't hold up.
 2. **Fix confirmed, in-scope findings** directly on the branch.
-3. **File an issue for each legitimate but out-of-scope finding** (following the project's issue conventions) instead of expanding this PR. Report these numbers in `DEFERRED_ISSUES` (Step 12).
+3. **File an issue for each out-of-scope finding that clears the bar for filing** (following the project's issue conventions) instead of expanding this PR. Legitimate is not the bar, and where the project documents its own triage rules those govern. Absent them, a defect earns a tracker entry only when you can name the user gesture or supported automated flow that reaches it, *and* its consequence is worse than a logged self-recovering retry or a state an obvious user action clears. A finding with no flow behind it — a hypothetical caller, timing no real flow produces, a degenerate input — is recorded in the PR description instead, with the diff that raised it. Report filed numbers in `DEFERRED_ISSUES` (Step 12).
 4. Fetch any PR comments and address them too:
    ```
    gh api repos/{owner}/{repo}/pulls/<PR-NUMBER>/comments
    ```
 5. If any files changed, re-run the project's build and test commands, fix failures, then commit following the project's commit format and push.
+6. **Record the review in the PR description** — `gh pr edit <PR-NUMBER> --body` replaces the body wholesale, so read it first (`gh pr view <PR-NUMBER> --json body -q .body`) and write it back with a short `## Review` section naming which lanes ran and at what level, what you fixed, what you filed with its number, and what you set aside and why. A finding examined and dismissed is worth as much to the next reader as one that was fixed, and this is the only place it survives.
 
 ## Step 10: Merge (merge mode only)
 
