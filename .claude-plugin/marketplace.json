@@ -23,7 +23,7 @@
       "name": "issues",
       "description": "GitHub issue management utilities for Claude Code — create and fix issues with codebase context",
       "source": "./issues",
-      "version": "2.6.1"
+      "version": "2.6.2"
     },
     {
       "name": "claude-memory-sync",
