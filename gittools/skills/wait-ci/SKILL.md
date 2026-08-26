@@ -17,7 +17,11 @@ bare `git push` with mismatched local/remote branch names silently no-ops),
 the API's view of the PR head, and check registration (zero checks reported
 reads as success). The script owns the whole choreography — pin the expected
 SHA, verify the push landed via `git ls-remote`, barrier on the required
-checks registering, watch, then verify the final rollup directly.
+checks registering, watch, then verify the final rollup directly. While
+checks fail to register it also watches the PR's mergeable state: a PR that
+conflicts with its base has no merge commit, so pull_request-triggered
+workflows can never start — that returns exit 7 promptly instead of
+spinning to the deadline.
 
 ## Run it
 
@@ -53,6 +57,7 @@ Progress goes to stderr; the last stdout line is machine-readable
 | 4 | The push never landed on the remote | Push with an explicit refspec (`git push origin HEAD:<branch>`), re-run |
 | 5 | PR head moved mid-wait (a new push happened) | Re-run against the new head |
 | 6 | PR is not open (merged or closed) | Stop — nothing to wait for |
+| 7 | PR conflicts with its base — no merge commit, so pull_request-triggered checks can never register | Rebase or merge the base into the head branch, push, re-run |
 
 Merge only on exit 0. Do not substitute a hand-rolled `gh pr checks --watch`
 or a sleep loop: the watch's exit code alone is not a verdict (it is 0 for
