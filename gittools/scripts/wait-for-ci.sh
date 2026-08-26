@@ -8,7 +8,11 @@
 #      fast (exit 4) instead of timing out, while a landed push whose API
 #      view is lagging keeps waiting.
 #   2. Wait until the expected checks are actually registered for that SHA
-#      (a watch started too early sees no/partial checks: false green).
+#      (a watch started too early sees no/partial checks: false green). A PR
+#      whose merge commit cannot be built (it conflicts with the base) never
+#      registers pull_request-triggered checks at all — that is detected via
+#      the PR's mergeable state and reported (exit 7) instead of being
+#      indistinguishable from slow registration until the deadline.
 #   3. Run one unpiped `gh pr checks --watch --fail-fast`.
 #   4. Verify the final status rollup directly — the watch's exit code is
 #      never trusted (it is 0 for "no checks yet" and for cancelled runs).
@@ -26,6 +30,9 @@
 #      expected SHA) — push with an explicit refspec and re-run
 #   5  PR head moved off the expected SHA mid-wait (a new push happened)
 #   6  PR is not open (merged or closed)
+#   7  the PR conflicts with its base, so its merge commit cannot be built
+#      and pull_request-triggered checks will never register — rebase or
+#      merge the base into the head branch, push, and re-run
 #
 # Progress goes to stderr; the last stdout line is machine-readable:
 #   wait-for-ci: verdict=<green|failed|pending|push-missing|...> pr=N sha=... elapsed=Ns
@@ -49,8 +56,8 @@ Usage: wait-for-ci.sh [<pr-number>] [--sha <sha>] [--timeout <seconds>]
                 push actually landed (default origin).
 
 Exit codes: 0 green | 1 usage | 2 failed | 3 still pending | 4 push never
-landed | 5 head moved | 6 PR not open. Merge only on exit 0. See the header
-of this script for details.
+landed | 5 head moved | 6 PR not open | 7 conflicts with base. Merge only on
+exit 0. See the header of this script for details.
 EOF
 }
 
@@ -146,14 +153,17 @@ sha_hint() {
 
 DEADLINE=$((SECONDS + TIMEOUT))
 
-# --- snapshot: one API call per poll -> SNAP_HEAD, SNAP_STATE, SNAP_ROLLUP ---
+# --- snapshot: one API call per poll -> SNAP_HEAD, SNAP_STATE, -------------
+# --- SNAP_MERGEABLE, SNAP_ROLLUP --------------------------------------------
 # SNAP_ROLLUP is "name<TAB>result" lines; result is normalized so that
 # anything unfinished reads PENDING and finished states keep their GraphQL
 # names (SUCCESS, FAILURE, CANCELLED, ...). Handles both rollup node shapes
-# (CheckRun and commit-status StatusContext).
+# (CheckRun and commit-status StatusContext). SNAP_MERGEABLE is GitHub's
+# async merge-commit computation: MERGEABLE, CONFLICTING, or UNKNOWN (still
+# computing — never act on UNKNOWN).
 snapshot() {
-  _snap=$(ghq pr view "$PR" --json headRefOid,state,statusCheckRollup --jq '
-    .headRefOid, .state,
+  _snap=$(ghq pr view "$PR" --json headRefOid,state,mergeable,statusCheckRollup --jq '
+    .headRefOid, .state, .mergeable,
     (.statusCheckRollup[]? |
       [ (.name // .context // "?"),
         (if .__typename == "CheckRun"
@@ -162,7 +172,8 @@ snapshot() {
          end) ] | @tsv)') || return 1
   SNAP_HEAD=$(printf '%s\n' "$_snap" | sed -n 1p)
   SNAP_STATE=$(printf '%s\n' "$_snap" | sed -n 2p)
-  SNAP_ROLLUP=$(printf '%s\n' "$_snap" | sed -n '3,$p' | sort -u)
+  SNAP_MERGEABLE=$(printf '%s\n' "$_snap" | sed -n 3p)
+  SNAP_ROLLUP=$(printf '%s\n' "$_snap" | sed -n '4,$p' | sort -u)
 }
 
 classify() {
@@ -200,6 +211,27 @@ EOF
 deadline_check() { # <what we're still waiting for>
   if [ "$SECONDS" -ge "$DEADLINE" ]; then
     finish 3 pending "deadline (${TIMEOUT}s) reached — $1 — re-run to keep waiting"
+  fi
+}
+
+# While checks are failing to register, a CONFLICTING PR is the likely cause:
+# pull_request-triggered workflows run against the merge commit, and a PR that
+# conflicts with its base has none, so those checks never start — the barrier
+# would otherwise spin until the deadline. Grace period covers push-triggered
+# checks that register slowly on a PR that happens to also be conflicting; a
+# flip back to MERGEABLE/UNKNOWN (a base update mid-wait) resets it.
+CONFLICT_GRACE=45
+CONFLICT_SINCE=""
+conflict_check() {
+  if [ "$SNAP_MERGEABLE" = "CONFLICTING" ]; then
+    if [ -z "$CONFLICT_SINCE" ]; then
+      CONFLICT_SINCE=$SECONDS
+      say "PR #$PR is CONFLICTING with its base — pull_request-triggered checks cannot start without a merge commit"
+    elif [ $((SECONDS - CONFLICT_SINCE)) -ge "$CONFLICT_GRACE" ]; then
+      finish 7 conflicting "no checks registering and PR #$PR conflicts with its base — its merge commit cannot be built, so pull_request-triggered workflows will never run; rebase or merge the base branch into the head branch, push, and re-run"
+    fi
+  else
+    CONFLICT_SINCE=""
   fi
 }
 
@@ -344,6 +376,7 @@ while :; do
   if [ -n "$REQUIRED" ]; then
     MISSING=$(missing_required)
     if [ -n "$MISSING" ]; then
+      conflict_check
       deadline_check "required check(s) never registered: $(oneline "$MISSING")"
       say "waiting for required check(s) to register: $(oneline "$MISSING")"
       sleep 10
@@ -352,6 +385,7 @@ while :; do
   else
     COUNT=$(printf '%s\n' "$SNAP_ROLLUP" | grep -c .)
     if [ "$COUNT" -eq 0 ] || [ "$COUNT" != "$PREV_COUNT" ]; then
+      conflict_check
       deadline_check "checks still registering ($COUNT reported)"
       say "waiting for the reported check set to settle ($COUNT so far)…"
       PREV_COUNT=$COUNT
@@ -359,6 +393,7 @@ while :; do
       continue
     fi
   fi
+  CONFLICT_SINCE=""
 
   # A required check already failed: no point waiting for the rest.
   GATING=$(gating_failures)
@@ -379,6 +414,9 @@ while :; do
   report_table
   if [ -n "$FAILED_LIST" ]; then
     say "note: non-required check(s) not green: $(oneline "$FAILED_LIST")"
+  fi
+  if [ "$SNAP_MERGEABLE" = "CONFLICTING" ]; then
+    say "note: checks are green but the PR is CONFLICTING with its base — resolve conflicts before merging"
   fi
   finish 0 green "verified green on $(printf '%.8s' "$EXPECTED_SHA")"
 done
