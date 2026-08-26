@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/approve-issue-fixer-merge.sh"
+            "command": "${CLAUDE_PLUGIN_ROOT}/scripts/approve-issue-implementer-merge.sh"
           }
         ]
       }
