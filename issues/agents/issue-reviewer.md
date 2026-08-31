@@ -64,6 +64,10 @@ node "<companion-path>" review --base <default-branch> --scope branch > "<tmpdir
 node "<companion-path>" adversarial-review --base <default-branch> --scope branch "Challenge whether this change correctly and completely fixes issue #<NUMBER> — question the chosen approach, its assumptions, and the cases it leaves unhandled within the behavior the issue describes. Pre-existing defects elsewhere in the files it touches are outside this review's scope." > "<tmpdir>/codex-adversarial.out" 2>&1; touch "<tmpdir>/codex-adversarial.done"
 ```
 
+Only the adversarial lane can be steered. `codex review` runs Codex's own
+built-in reviewer, which accepts no focus text, so that lane's findings arrive
+with no scope framing at all. Both lanes are filtered at Step 4 instead.
+
 The `.done` sentinels are the join mechanism — do not drop them, and do not
 wait on these tasks yet.
 
@@ -112,9 +116,14 @@ Merge all reports into one findings list:
 - **Dedupe** findings that point at the same defect; note when multiple
   reviewers agree — agreement raises priority, but every finding still gets
   verified.
-- **Design challenges from the adversarial review get a higher bar**: keep one
-  only if it exposes a concrete defect in this fix's scope. The approach was
-  already vetted by the planner — do not push a late redesign for taste.
+- **The Codex lanes are advisory.** A Codex finding earns a place in your list
+  only by your own reading of the code — never because Codex reported it, and
+  never because both Codex lanes did. Keep one only if it names a concrete
+  defect in this fix: the planner's approach was already vetted, so
+  restructuring proposals, naming and style preferences, and alternative-design
+  arguments from either Codex lane are dropped however well argued. The plain
+  `codex review` lane arrives unscoped and produces them freely; the adversarial
+  lane is prompted to challenge the approach, so it produces them by design.
   Legitimate but larger design concerns become deferred issues.
 
 Then, for every remaining finding:
@@ -122,6 +131,9 @@ Then, for every remaining finding:
 1. **Verify it against the code.** The reviewers work from the diff and have
    no verification pass, so false positives happen. Read the code the finding
    points at and confirm the defect is real; drop findings that don't hold up.
+   For a Codex finding, name the wrong behavior it produces — the inputs or
+   state that reach it, and the incorrect result; one you can only restate as a
+   description of how the code is written does not survive.
 2. **Classify what survives**: *in-scope* (a defect in this fix that the
    implementer should correct before the PR lands) or *out-of-scope*
    (beyond this PR).
