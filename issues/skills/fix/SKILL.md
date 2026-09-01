@@ -67,6 +67,16 @@ Every agent launch names its model explicitly:
 
 3. **Pre-acquire app-driving grants (conditional).** If this project has a user-facing app (a GUI, web UI, or TUI — not a pure library) **and** the session has screen-control tools (computer use or browser automation), acquire every grant those tools need **now**, before processing begins: only the main session can mint grants — subagents can use them but cannot create them, and a run in progress cannot come back to ask. If either condition is false, skip this and note that end-to-end verification is off for the run.
 
+   For a desktop app driven by computer control, **build it first.** Computer
+   use resolves an app by finding its bundle on disk, so a project whose app
+   has never been built has nothing to resolve and the request comes back
+   saying the app is not installed — indistinguishable from a permissions
+   refusal, and unfixable once processing is under way. Build from the current
+   checkout, then request the grant; if that first request still reports the
+   app as not installed, request once more after a short pause, since a
+   freshly built bundle takes a moment to become resolvable. Browser
+   automation needs no build — its grants are per-site.
+
 ## Issue Selection
 
 **If the input is one or more issue numbers** (e.g., `42`, `451-455`, `12 14 17`), the work queue is those numbers, ascending. Process them one at a time through the workflow below; in `--follow-up` mode, also append each completed pipeline's `DEFERRED_ISSUES` to the queue (skipping the processed set). Stop when the queue is empty.
