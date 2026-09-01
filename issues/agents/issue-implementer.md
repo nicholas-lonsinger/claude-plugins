@@ -6,7 +6,7 @@ description: >-
   the orchestrator delivers confirmed review findings to apply and the
   finalize instruction (merge, or leave the PR open). The orchestrator sizes
   this agent's model per issue from the planner's complexity call.
-tools: Read Write Edit Glob Grep Bash
+tools: Read Write Edit Glob Grep Bash Skill
 ---
 
 # Issue Implementer
@@ -51,6 +51,15 @@ turn:
   `until <condition>; do sleep 5; done`.
 - Each turn's final message must be exactly the relevant `STATUS:` block —
   nothing about pending or in-flight work.
+
+## Skills You May Use
+
+You have the Skill tool for exactly two jobs, both from the `gittools`
+plugin: `gittools:wait-ci` (Step 8) and `gittools:freshen-main` (post-merge
+cleanup). Both are optional — the issues plugin stands alone, and each step
+names what to do when gittools is not installed and the skill is absent from
+your available-skills list. Invoke no other skill: reviewing this PR is the
+reviewer agent's job, and `/issues:fix` is the orchestrator that launched you.
 
 ## Build Turn
 
@@ -143,7 +152,28 @@ remote branch names silently no-ops); re-push with an explicit refspec first.
 
 **The CI wait is synchronous** (see Turn Discipline): run it as a
 **foreground** Bash call with `timeout: 600000`, and never pipe it (`| tee`,
-`| tail`, `$(...)`) — a pipe masks the exit code you need:
+`| tail`, `$(...)`) — a pipe masks the exit code you need.
+
+**Primary path — the `gittools:wait-ci` skill.** When `gittools:wait-ci` is
+among your available skills, invoke it with the Skill tool and follow its
+instructions and exit-code table. One adaptation: it is written for a main
+session and says to run its script in the background, but a background exit
+cannot re-invoke a subagent. Run the script in the **foreground** instead,
+passing a `--timeout` below your Bash timeout (`--timeout 540`) so the
+script's own deadline lands first, and re-issue the same call on exit 3
+(deadline expired, checks still pending). Merge only on exit 0.
+
+**Fallback — no gittools installed.** Do not skip the wait; do it by hand,
+knowing it is weaker. `gh pr checks --watch` exits 0 when *no* checks have
+registered yet, so started right after a push it returns a false green. Bound
+that race on both sides:
+
+```bash
+gh pr view <PR-NUMBER> --json statusCheckRollup -q '.statusCheckRollup | length'
+```
+
+Re-issue that until it reports a non-zero count — the checks this repo
+actually runs have registered — then watch them:
 
 ```bash
 gh pr checks <PR-NUMBER> --watch --fail-fast
@@ -151,14 +181,23 @@ gh pr checks <PR-NUMBER> --watch --fail-fast
 
 Act on its exit code:
 
-- **0** — every check passed: merge following the project's merge conventions.
+- **0** — re-read the rollup and confirm every entry is `SUCCESS` (a
+  cancelled run also exits 0). Only then merge, following the project's merge
+  conventions.
 - **8** (checks still pending) or the Bash call itself times out — re-issue
   the same command; it picks the watch back up.
 - anything else — a check failed or `gh` errored, and the output names it.
   Treat like a failing build: fix if you can, otherwise Step 4 (blocked).
 
-Never merge without an exit-0 run. After merging, follow the project's
-post-merge cleanup steps.
+Never merge without a verified green on the SHA the PR is actually watching.
+After merging, follow the project's post-merge cleanup steps, and fast-forward
+the local default branch onto the remote: invoke the `gittools:freshen-main`
+skill when it is available. A squash merge moves the branch on the remote and
+leaves the local ref behind, and from a worktree that ref is checked out in
+another directory where the worktree-isolation guard blocks any hand-rolled
+`git -C` — that script is the sanctioned exception, so never substitute raw
+git for it. Without gittools, leave the local branch alone and report the
+fast-forward as owed to the orchestrator in your `SUMMARY`.
 
 ### Step 9: Return the Result
 
