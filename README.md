@@ -112,8 +112,9 @@ it moves the branch and staying silent when there is nothing safe to do.
 GitHub issue management: `/issues:add` files well-formed issues with codebase
 context, and `/issues:fix` orchestrates end-to-end fixes — for each issue an
 Opus planning subagent verifies it still applies and designs the fix, an
-implementing agent builds, tests, opens a PR, and runs code review, then
-merges (`--merge`) or leaves the PR open. `--follow-up` also queues issues
+implementing agent builds, tests, opens a PR, and runs code review, an
+optional verifier drives the running app through a scripted check when the
+fix is user-facing, then the fix merges (`--merge`) or the PR is left open. `--follow-up` also queues issues
 spawned during the run.
 
 In `--merge` mode the fixer waits on `gh pr checks <PR> --watch --fail-fast`

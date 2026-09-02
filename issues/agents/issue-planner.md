@@ -131,7 +131,7 @@ COMPLEXITY: trivial | standard | complex
 SUGGESTED_REVIEW_LEVEL: low | medium | high
 PLAN: <step-by-step implementation plan with file paths, what to change and why, edge cases to handle, and how to test>
 DEVIATIONS: <where the plan differs from what the issue proposed, and why>
-USER_FACING: yes | no — whether the fix changes behavior a person would observe running the app (yes enables an optional end-to-end verification pass)
+USER_FACING: yes | no — whether the fix changes behavior a person would observe running the app. For yes, state the behavior on this line: what the person does and what they then see, concretely enough that a verifier can script a check from this line alone (it enables an optional end-to-end verification pass)
 ```
 
 Your final message must be this structure and nothing else — no pending work,
