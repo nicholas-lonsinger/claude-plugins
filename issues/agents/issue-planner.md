@@ -131,7 +131,7 @@ COMPLEXITY: trivial | standard | complex
 SUGGESTED_REVIEW_LEVEL: low | medium | high
 PLAN: <step-by-step implementation plan with file paths, what to change and why, edge cases to handle, and how to test>
 DEVIATIONS: <where the plan differs from what the issue proposed, and why>
-USER_FACING: yes | no — whether the fix changes behavior a person would observe running the app (yes enables an optional end-to-end verification pass)
+USER_FACING: no — or `yes — <one line naming exactly what a person running the app should now observe, and where>`. This line is handed to the end-to-end verifier verbatim and is the only description it gets, so `yes` without an observable statement leaves it nothing to test.
 ```
 
 Your final message must be this structure and nothing else — no pending work,

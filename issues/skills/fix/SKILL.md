@@ -149,7 +149,18 @@ Default branch: <DEFAULT_BRANCH>
 
 ### Step 4: Verify End-to-End (issues:issue-verifier — conditional)
 
-Launch the verifier only if **all** of: the planner said `USER_FACING: yes`, Setup acquired (or found it needs no) app-driving grants, and the fix is not already covered by an equivalent end-to-end test the implementer ran. Input: the issue number, PR number, and the behavior to verify (from the plan).
+Launch the verifier only if **all** of: the planner said `USER_FACING: yes`, Setup acquired (or found it needs no) app-driving grants, and the fix is not already covered by an equivalent end-to-end test the implementer ran.
+
+Launch it with this input:
+
+```
+Verify issue #<NUMBER> / PR #<PR_NUMBER> end-to-end.
+APP: <the app under test>. Granted apps: <every app Setup acquired a grant for> — every app not listed is off limits.
+TARGET: <the specific VM, document, or fixture to drive — the one that is safe to wreck>
+BEHAVIOR: <the planner's USER_FACING line, verbatim>
+```
+
+You fill in `APP` and `TARGET`: the verifier does not choose which app to drive or which fixture to wreck. `BEHAVIOR` is copied from the plan unedited — the verifier writes its own test script from it, and you do not write steps yourself.
 
 - **`STATUS: verified`** — proceed.
 - **`STATUS: failed`** — its `FAILURES` join the confirmed findings for Step 5.
