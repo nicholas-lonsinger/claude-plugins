@@ -158,7 +158,7 @@ TARGET: <the specific VM, document, or fixture to use>
 BEHAVIOR: <the planner's USER_FACING line, verbatim>
 ```
 
-You name the `TARGET`: the one VM, document, or fixture that is safe to wreck — create a throwaway if none exists. The verifier never chooses its own. Pass `USER_FACING` verbatim; the verifier writes its own numbered script from that line, so do not write steps for it.
+You name the `TARGET`: the one VM, document, or fixture that is safe to wreck — create a throwaway if none exists. The verifier never chooses its own. Pass `USER_FACING` verbatim; the verifier plans its own steps from that line and decides how to reach them, so do not write steps for it.
 
 - **`STATUS: verified`** — proceed.
 - **`STATUS: failed`** — its `FAILURES` join the confirmed findings for Step 5.
