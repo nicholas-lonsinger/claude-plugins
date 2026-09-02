@@ -6,7 +6,7 @@ description: >-
   the orchestrator delivers confirmed review findings to apply and the
   finalize instruction (merge, or leave the PR open). The orchestrator sizes
   this agent's model per issue from the planner's complexity call.
-tools: Read Write Edit Glob Grep Bash
+tools: Read Write Edit Glob Grep Bash Skill
 ---
 
 # Issue Implementer
@@ -47,8 +47,7 @@ turn:
   (builds, tests, CI watches) as a normal foreground call with an adequate
   `timeout` (up to the 600000 ms maximum). If a wait can outlast one call,
   re-issue the same blocking call when it times out.
-- **No no-op polling turns.** Pacing belongs *inside* a single Bash call:
-  `until <condition>; do sleep 5; done`.
+- **No no-op polling turns.** Pacing belongs *inside* a single Bash call.
 - Each turn's final message must be exactly the relevant `STATUS:` block —
   nothing about pending or in-flight work.
 
@@ -92,8 +91,7 @@ STATUS: blocked | REASON: <brief reason>
 
 1. **Commit** following the project's commit message format. Reference the
    issue with `Fixes #<NUMBER>` in the summary.
-2. **Push** with `git push -u origin <branch-name>`, and confirm the push
-   landed: `git status -sb` must show no `[ahead N]`.
+2. **Push** with `git push -u origin <branch-name>`.
 3. **Create the PR** with `gh pr create`. Include the appropriate
    issue-closing keyword in the PR body so the issue auto-closes on merge (per
    project merge conventions). If the fix diverged from the plan or from what
@@ -127,8 +125,7 @@ Treat verification failures the same way — they describe observed broken
 behavior your fix must handle.
 
 If any files changed: re-run the project's build and test commands, fix
-failures, commit following the project's commit format, and push. Confirm the
-push landed (`git status -sb`, no `[ahead N]`).
+failures, commit following the project's commit format, and push.
 
 ### Step 8: Merge (merge mode only)
 
@@ -136,29 +133,15 @@ push landed (`git status -sb`, no `[ahead N]`).
 Check out the default branch (leave the PR branch intact — it backs the open
 PR), verify the working tree is clean, and go to Step 9.
 
-**In `merge` mode**, first confirm the PR is watching the work you pushed —
-`gh pr view <PR-NUMBER> --json headRefOid` must match your local `HEAD`. If it
-doesn't, your push never landed (a bare `git push` with mismatched local and
-remote branch names silently no-ops); re-push with an explicit refspec first.
+**In `merge` mode**, wait for the PR's CI to be verifiably green on the
+commit you pushed, then merge following the project's merge conventions. The
+wait is synchronous (see Turn Discipline). A watch that exits 0 before any
+check has registered, or on a cancelled run, is not a verdict: never merge
+without a verified green. A failed check is a failing build — fix it if you
+can, otherwise Step 4 (blocked).
 
-**The CI wait is synchronous** (see Turn Discipline): run it as a
-**foreground** Bash call with `timeout: 600000`, and never pipe it (`| tee`,
-`| tail`, `$(...)`) — a pipe masks the exit code you need:
-
-```bash
-gh pr checks <PR-NUMBER> --watch --fail-fast
-```
-
-Act on its exit code:
-
-- **0** — every check passed: merge following the project's merge conventions.
-- **8** (checks still pending) or the Bash call itself times out — re-issue
-  the same command; it picks the watch back up.
-- anything else — a check failed or `gh` errored, and the output names it.
-  Treat like a failing build: fix if you can, otherwise Step 4 (blocked).
-
-Never merge without an exit-0 run. After merging, follow the project's
-post-merge cleanup steps.
+After the merge lands, fast-forward the local default branch onto the remote
+and follow the project's post-merge cleanup steps.
 
 ### Step 9: Return the Result
 
@@ -182,23 +165,8 @@ DEFERRED_ISSUES: [<issue numbers you filed this turn, if any — do not repeat t
 SUMMARY: <brief description, including any findings you skipped and why>
 ```
 
-## Efficiency Guidelines
+## GitHub CLI
 
-### File reads
-- When you read a file in full, **retain the content mentally**. Do not
-  re-read the same file (or partial ranges of it) to find sections you already
-  saw. Note line numbers on first read and use them directly for edits.
-- If a file is large (500+ lines) and you only need a few sections, read
-  targeted ranges instead of the full file. But do not read the full file
-  *and then* re-read ranges — pick one approach.
-
-### GitHub CLI
-- Always use `--json` output format for `gh` commands when you need to parse
-  the result programmatically. The human-readable output can be unreliable in
-  non-TTY contexts. If a `gh` command fails, do not retry the same command
-  more than once — switch to the `--json` variant or `gh api` instead.
-
-### Build log parsing
-- After capturing build output to a logfile, parse it with a **single** grep
-  command that covers all patterns you need. Do not run multiple separate
-  grep commands on the same logfile. Plan your patterns upfront.
+`gh` human-readable output is unreliable in non-TTY contexts. Use `--json`
+whenever you parse a result; if a `gh` command fails, switch to the `--json`
+variant or `gh api` rather than retrying the same command.

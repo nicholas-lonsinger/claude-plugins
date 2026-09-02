@@ -17,13 +17,13 @@
       "name": "gittools",
       "description": "Git and GitHub workflow utilities for Claude Code — a worktree-safe default-branch fast-forward after merge, and a race-proof wait for PR CI to go green",
       "source": "./gittools",
-      "version": "0.7.0"
+      "version": "0.7.1"
     },
     {
       "name": "issues",
       "description": "GitHub issue management utilities for Claude Code — create and fix issues with codebase context",
       "source": "./issues",
-      "version": "2.7.2"
+      "version": "2.8.0"
     },
     {
       "name": "claude-memory-sync",

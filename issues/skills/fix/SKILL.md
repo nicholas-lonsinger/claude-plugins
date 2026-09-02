@@ -9,6 +9,7 @@ allowed-tools:
   - Grep
   - Read
   - Task
+  - Skill
   - SendMessage
 ---
 
@@ -173,7 +174,7 @@ It applies the findings, re-tests, pushes, then merges (merge mode) or leaves th
 If any agent in the pipeline ends without its terminal `STATUS:` line — typically saying it is "waiting" for CI or a background task — the agent is done: notifications from tasks it orphaned may never be delivered. Do **not** end your turn to wait for one. Recover actively, in this order:
 
 1. Check ground truth yourself: `gh pr view <PR> --json state,headRefOid,mergeStateStatus,statusCheckRollup` and `gh issue view <N> --json state`.
-2. If everything left is mechanical — waiting for CI, merging, cleanup — finish it yourself with **blocking foreground** Bash calls. For the CI wait, run `gh pr checks <PR> --watch --fail-fast` unpiped (re-issue it on exit 8 or a Bash timeout). Merge per project conventions only on exit 0, and only in `--merge` mode.
+2. If everything left is mechanical — waiting for CI, merging, cleanup — finish it yourself with **blocking foreground** calls, to the same bar the implementer holds: merge per project conventions only on a verified green, and only in `--merge` mode.
 3. Only if substantive work remains (unfixed findings, failing checks needing code changes), resume that agent once via SendMessage with explicit instructions to finish synchronously and return a terminal `STATUS:`. If it returns non-terminal a second time, take over per step 2 or record the issue as `blocked` — do not resume it again.
 
 The same applies if a SendMessage result says the message was queued but the recipient never responds: re-send once, then take over.
