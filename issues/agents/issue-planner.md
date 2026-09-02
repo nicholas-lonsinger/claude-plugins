@@ -7,7 +7,7 @@ description: >-
   suggested review level), already-fixed, stale, or not-worth-fixing — or
   handles a research-labeled issue end-to-end itself.
 model: opus
-tools: Read Glob Grep Bash
+tools: Read Glob Grep Bash Skill
 ---
 
 # Issue Planner

@@ -6,7 +6,7 @@ description: >-
   the orchestrator delivers confirmed review findings to apply and the
   finalize instruction (merge, or leave the PR open). The orchestrator sizes
   this agent's model per issue from the planner's complexity call.
-tools: Read Write Edit Glob Grep Bash
+tools: Read Write Edit Glob Grep Bash Skill
 ---
 
 # Issue Implementer
@@ -141,24 +141,24 @@ PR), verify the working tree is clean, and go to Step 9.
 doesn't, your push never landed (a bare `git push` with mismatched local and
 remote branch names silently no-ops); re-push with an explicit refspec first.
 
-**The CI wait is synchronous** (see Turn Discipline): run it as a
-**foreground** Bash call with `timeout: 600000`, and never pipe it (`| tee`,
-`| tail`, `$(...)`) — a pipe masks the exit code you need:
+**The CI wait is synchronous** (see Turn Discipline): whatever you wait with,
+run it as a **foreground** Bash call with `timeout: 600000`, never pipe it
+(`| tee`, `| tail`, `$(...)`) — a pipe masks the exit code you need — and
+re-issue it if the wait outlasts one call.
 
-```bash
-gh pr checks <PR-NUMBER> --watch --fail-fast
-```
+What this step owes is a **verified green on the SHA the PR is actually
+watching**, not merely a command that exited 0. `gh pr checks --watch` is not
+that verdict by itself: it exits 0 when no checks have registered yet, so a
+watch started right after a push returns a false green, and it exits 0 for a
+cancelled run too. Choose your means, then confirm the outcome against the
+PR's own check rollup before acting on it.
 
-Act on its exit code:
+Never merge without that verified green. When a check genuinely failed, treat
+it like a failing build: fix it if you can, otherwise Step 4 (blocked).
 
-- **0** — every check passed: merge following the project's merge conventions.
-- **8** (checks still pending) or the Bash call itself times out — re-issue
-  the same command; it picks the watch back up.
-- anything else — a check failed or `gh` errored, and the output names it.
-  Treat like a failing build: fix if you can, otherwise Step 4 (blocked).
-
-Never merge without an exit-0 run. After merging, follow the project's
-post-merge cleanup steps.
+After merging, follow the project's post-merge cleanup steps, and leave the
+local default branch fast-forwarded onto the remote — a squash merge advances
+the branch on the remote and leaves the local ref where it was.
 
 ### Step 9: Return the Result
 
