@@ -25,11 +25,10 @@ spinning to the deadline.
 
 ## Run it
 
-After pushing, from inside the repository. From a main session run it as a
-**background** Bash command: CI regularly outlives the foreground timeout, and
-the exit re-invokes you. A subagent gets no such re-invocation, so from one run
-it in the **foreground** with `--timeout` under the Bash call's own timeout
-and re-run it on exit 3:
+After pushing, from inside the repository. Run it as a **background** Bash
+command — from a main session and from a subagent alike: CI regularly outlives
+the foreground timeout, and the exit re-invokes you with the exit code and
+output. End the turn after launching it; do not poll or sleep meanwhile.
 
 ```bash
 "${CLAUDE_PLUGIN_ROOT}/scripts/wait-for-ci.sh" <pr-number>
