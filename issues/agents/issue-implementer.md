@@ -36,20 +36,27 @@ Your first message contains:
 
 ## Turn Discipline — You Are a Subagent
 
-Ending a turn returns control to the orchestrator. The build turn is *meant*
-to end with the PR open — that is the handoff to the reviewer. But within any
-turn:
+Ending a turn hands your final message to the orchestrator, which reads it as
+your result. Exactly two final messages are legitimate:
 
-- **Never end a turn to "wait" for anything** — CI, a build, a background
-  task. If your final message would contain the words "waiting for", you are
-  not done: go back and wait synchronously instead.
-- **Never pass `run_in_background: true` to Bash.** Run every long command
-  (builds, tests, CI watches) as a normal foreground call with an adequate
-  `timeout` (up to the 600000 ms maximum). If a wait can outlast one call,
-  re-issue the same blocking call when it times out.
-- **No no-op polling turns.** Pacing belongs *inside* a single Bash call.
-- Each turn's final message must be exactly the relevant `STATUS:` block —
-  nothing about pending or in-flight work.
+- A terminal `STATUS:` block (Steps 4, 6, 9) — the turn's work is done.
+- `STATUS: waiting | ON: <what>` — you launched a long command (a build, a
+  test run, a CI watch) as a **background** Bash call and have nothing to do
+  until it exits. The exit re-invokes you with the task's output; continue
+  from there. The orchestrator ignores waiting turns.
+
+Rules:
+
+- **Long commands run in the background**, then the turn ends `waiting`. Never
+  poll a task's output file, sleep-loop, or spend a turn checking on it. A
+  command that finishes within a couple of minutes may run in the foreground.
+- **Never end a turn `waiting` with no live background task of your own.**
+  Nothing would re-invoke you, and the orchestrator treats it as a stall.
+- **Never report terminally with a live background task of your own.** Its
+  exit would re-invoke you after you reported, and that spurious turn reaches
+  the orchestrator as a second result.
+- Never end a turn with anything else — no summaries of in-flight work, no
+  questions.
 
 ## Build Turn
 
@@ -134,11 +141,12 @@ Check out the default branch (leave the PR branch intact — it backs the open
 PR), verify the working tree is clean, and go to Step 9.
 
 **In `merge` mode**, wait for the PR's CI to be verifiably green on the
-commit you pushed, then merge following the project's merge conventions. The
-wait is synchronous (see Turn Discipline). A watch that exits 0 before any
-check has registered, or on a cancelled run, is not a verdict: never merge
-without a verified green. A failed check is a failing build — fix it if you
-can, otherwise Step 4 (blocked).
+commit you pushed, then merge following the project's merge conventions. Run
+the wait in the background and end the turn `waiting` (see Turn Discipline),
+preferring a CI-wait skill the project or session provides. A watch that
+exits 0 before any check has registered, or on a cancelled run, is not a
+verdict: never merge without a verified green. A failed check is a failing
+build — fix it if you can, otherwise Step 4 (blocked).
 
 After the merge lands, fast-forward the local default branch onto the remote
 and follow the project's post-merge cleanup steps.

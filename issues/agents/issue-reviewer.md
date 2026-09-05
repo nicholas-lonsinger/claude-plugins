@@ -32,12 +32,15 @@ The repo is checked out on the PR branch — read code directly.
 
 ## Turn Discipline — You Are a Subagent
 
-Ending your turn returns you to the orchestrator as complete; nothing will
-re-invoke you. Never end a turn to "wait" for anything. The one permitted use
-of `run_in_background: true` is the Codex fan-out in Step 1, and only because
-Step 3 joins those tasks synchronously with a foreground sentinel wait — never
-end a turn while they are still running. Your final message must be exactly
-the Step 6 report.
+Ending your turn hands your final message to the orchestrator as your result.
+Exactly two final messages are legitimate: the Step 6 report (or the Step 2
+`blocked` status), or `STATUS: waiting | ON: codex reviews` while the Codex
+lane is still running and nothing else is left to do (Step 3). A background
+task's exit re-invokes you; the orchestrator ignores waiting turns. Never end
+a turn `waiting` with no live background task of your own, and never report
+terminally while one is still running — its exit would re-invoke you after
+you reported, and that spurious turn reaches the orchestrator as a second
+result.
 
 ## Step 1: Launch Codex Reviews (optional lane)
 
@@ -88,8 +91,8 @@ user-triggered, billed cloud review that you cannot launch. Do **not** pass
 
 If the code-review skill is not available in your environment, do **NOT**
 substitute your own review or skip this step — fail loudly so the problem gets
-fixed. Wait for any running Codex tasks via the Step 3 sentinel loop first
-(never abandon them mid-flight), then return:
+fixed. Let any running Codex tasks finish first — end the turn `waiting` per
+Step 3 until both sentinels exist — then return:
 
 ```
 STATUS: blocked | REASON: code-review skill unavailable — PR #<N> unreviewed
@@ -97,13 +100,11 @@ STATUS: blocked | REASON: code-review skill unavailable — PR #<N> unreviewed
 
 ## Step 3: Join the Codex Lane
 
-Skip if Step 1 was skipped. Wait for both sentinels with a single
-**foreground** blocking call (`timeout: 600000`; if it times out, re-issue the
-same call — Codex reviews can take several minutes):
-
-```bash
-until [ -f "<tmpdir>/codex-review.done" ] && [ -f "<tmpdir>/codex-adversarial.done" ]; do sleep 10; done
-```
+Skip if Step 1 was skipped. If either sentinel is missing, end the turn with
+`STATUS: waiting | ON: codex reviews`. Each lane's exit re-invokes you; on
+every wake check both sentinels and end the turn `waiting` again until both
+exist — Codex reviews can take several minutes, and the two lanes finish
+independently. Never sleep-loop on the sentinels.
 
 Then Read both `.out` files. If one contains an error instead of a review
 (e.g. Codex CLI not authenticated), proceed without that report and note it in
