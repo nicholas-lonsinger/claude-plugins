@@ -25,10 +25,7 @@ spinning to the deadline.
 
 ## Run it
 
-After pushing, from inside the repository. Run it as a **background** Bash
-command — from a main session and from a subagent alike: CI regularly outlives
-the foreground timeout, and the exit re-invokes you with the exit code and
-output. End the turn after launching it; do not poll or sleep meanwhile.
+After pushing, from inside the repository:
 
 ```bash
 "${CLAUDE_PLUGIN_ROOT}/scripts/wait-for-ci.sh" <pr-number>
@@ -44,6 +41,20 @@ With an explicit PR number, a checkout whose upstream is not the PR's head
 branch is refused (exit 1) rather than silently pinning the wrong commit.
 `--timeout <seconds>` bounds one invocation (default 3600), `--repo
 <owner/repo>` and `--remote <name>` cover non-default setups.
+
+## How to wait
+
+One invocation is bounded by `--timeout`, and exit 3 means nothing is wrong —
+call again against the same SHA to keep waiting. So the wait splits across
+calls however your situation requires; pick by what you are allowed to do,
+not by what kind of session you are:
+
+- **You may end the turn and be re-invoked** — run it as a **background**
+  Bash command with the default deadline. The exit re-invokes you with the
+  exit code and output; do not poll or sleep meanwhile.
+- **You must return a result within this turn** (your instructions forbid
+  ending it while work is pending) — run it in the **foreground** with
+  `--timeout` under the Bash call's own timeout, and re-run it on exit 3.
 
 ## Reading the result
 
