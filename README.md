@@ -89,21 +89,30 @@ needing attention (broken store, missing import line, memory conflicts).
 
 ### gittools
 
-Cleanup for the step of the pull request lifecycle that is easy to get wrong —
-moving the local default branch after the merge:
+The two steps of the pull request lifecycle that are easy to get wrong —
+knowing when CI is really green, and moving the local default branch after
+the merge:
 
 | Skill | Command | Description |
 |-------|---------|-------------|
-| freshen-main | `/gittools:freshen-main` | Fast-forward the local default branch after a merge, from inside a worktree |
+| wait-ci | `/gittools:wait-ci` | Block until a PR's CI is verifiably green on the commit you pushed; returns one verdict |
+| freshen-main | `/gittools:freshen-main` | Fast-forward the local default branch after a merge, from any checkout or worktree |
 
-`scripts/freshen-main.sh` does the work. A squash merge advances the branch on
-the remote and leaves the local ref behind, and a session running inside a git
-worktree cannot move it: the branch is checked out in another directory, so no
-in-worktree git command touches it, and ad-hoc `git -C <other-checkout>` is
-refused by the worktree-isolation guard. The script fetches with prune,
-resolves the default branch from the remote's HEAD symref, finds whichever
-worktree has it checked out, and fast-forwards there — printing one line when
-it moves the branch and staying silent when there is nothing safe to do.
+`scripts/wait-for-ci.sh` pins the expected head SHA, confirms the push landed
+via `git ls-remote`, waits for the required checks to register, watches, then
+verifies the final rollup directly — where a bare `gh pr checks --watch` races
+a fresh push and reports success on zero checks and on cancelled runs. The
+skill runs in its own Sonnet subagent (`agents/skill-runner.md`) in the
+background, so the caller receives one notification carrying the verdict and
+none of the progress.
+
+`scripts/freshen-main.sh` fetches with prune, resolves the default branch from
+the remote's HEAD symref, finds whichever worktree has it checked out, and
+fast-forwards there — the one vetted route from a worktree session, where the
+branch is checked out in another directory and ad-hoc `git -C` is refused by
+the worktree-isolation guard. It always ends with one verdict line:
+`fast-forwarded`, `current`, `diverged`, `dirty`, `not-checked-out`, or
+`setup-error`.
 
 **Requirements:** `gh` (authenticated), `git`, macOS or Linux
 
@@ -116,8 +125,8 @@ implementing agent builds, tests, opens a PR, and runs code review, then
 merges (`--merge`) or leaves the PR open. `--follow-up` also queues issues
 spawned during the run.
 
-In `--merge` mode the fixer waits on `gh pr checks <PR> --watch --fail-fast`
-and merges only when it exits 0.
+In `--merge` mode the implementer merges only on a verified-green CI verdict
+for the commit it pushed.
 
 **Requirements:** `gh` (authenticated), `git`
 

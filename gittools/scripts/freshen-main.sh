@@ -9,37 +9,52 @@
 # `git -C <other-checkout>` commands. This script is the vetted route — one
 # fetch, one fast-forward, nothing else.
 #
-# Quiet and best-effort. It prints one line when it moves the branch and exits
-# 0 silently otherwise: the branch is already current, it has diverged from the
-# remote, no worktree has it checked out, or that worktree has local changes a
-# fast-forward would overwrite. Exit 1 means the fetch itself failed (offline,
-# no such remote) or an argument was bad.
+# Usage:
+#   "${CLAUDE_PLUGIN_ROOT}/scripts/freshen-main.sh" [--remote <name>]
+#
+#   --remote  Remote whose default branch to follow (default origin).
+#
+# Output is one line, the verdict, on stdout:
+#   freshen-main: verdict=<token> branch=<name> [path=<checkout>]
+#
+# Verdict tokens and exit codes:
+#   0  fast-forwarded   the local branch moved; path= names the checkout
+#   0  current          already at the remote's tip
+#   0  diverged         the local branch has commits the remote lacks — a
+#                       situation for the user, never for a forced fix
+#   0  dirty            a fast-forward was possible but refused: local changes
+#                       or an operation in progress in that checkout
+#   0  not-checked-out  no worktree has the branch checked out (bare primary,
+#                       or detached HEAD there), so nothing to move
+#   1  setup-error      not in a repository, the fetch failed (offline, no
+#                       such remote), the default branch is unresolvable, or
+#                       a bad argument; reason= says which
 
 set -uo pipefail
 
 REMOTE=origin
 
 usage() {
-    cat <<'EOF'
-Usage: freshen-main.sh [--remote <name>]
+    sed -n '2,/^$/p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' >&2
+}
 
-Fetches (with prune) and fast-forwards the checkout holding the remote's
-default branch. Prints one line when it moves the branch, nothing otherwise.
-Exit 0 unless the fetch fails or an argument is bad (1).
-EOF
+verdict() { # <exit-code> <token> [key=value ...]
+    _code="$1"; _token="$2"; shift 2
+    printf 'freshen-main: verdict=%s%s\n' "$_token" "${*:+ $*}"
+    exit "$_code"
 }
 
 while [ $# -gt 0 ]; do
     case "$1" in
         --remote) REMOTE="${2:?--remote needs a value}"; shift 2 ;;
         -h|--help) usage; exit 0 ;;
-        *) printf 'freshen-main: unknown argument: %s\n' "$1" >&2; usage >&2; exit 1 ;;
+        *) usage; verdict 1 setup-error "reason=usage" "argument=$1" ;;
     esac
 done
 
-git rev-parse --git-dir >/dev/null 2>&1 || exit 0
+git rev-parse --git-dir >/dev/null 2>&1 || verdict 1 setup-error reason=not-a-repository
 
-git fetch --prune --quiet "$REMOTE" 2>/dev/null || exit 1
+git fetch --prune --quiet "$REMOTE" 2>/dev/null || verdict 1 setup-error reason=fetch-failed "remote=$REMOTE"
 
 # The default branch, read from the remote's cached HEAD symref. A clone made
 # with --single-branch, or a remote added by hand, has no refs/remotes/<remote>/HEAD
@@ -49,7 +64,7 @@ if [ -z "$default_ref" ]; then
     git remote set-head "$REMOTE" --auto --quiet 2>/dev/null
     default_ref=$(git symbolic-ref -q --short "refs/remotes/$REMOTE/HEAD" 2>/dev/null)
 fi
-[ -n "$default_ref" ] || exit 0
+[ -n "$default_ref" ] || verdict 1 setup-error reason=no-default-branch "remote=$REMOTE"
 branch=${default_ref#"$REMOTE/"}
 
 # The worktree with that branch checked out, which is not necessarily the
@@ -59,10 +74,14 @@ root=$(git worktree list --porcelain 2>/dev/null | awk -v want="refs/heads/$bran
     /^worktree / { path = substr($0, 10) }
     /^branch /   { if (substr($0, 8) == want) { print path; exit } }
 ')
-[ -n "$root" ] || exit 0
+[ -n "$root" ] || verdict 0 not-checked-out "branch=$branch"
 
-git merge-base --is-ancestor "$default_ref" "refs/heads/$branch" 2>/dev/null && exit 0
+git merge-base --is-ancestor "$default_ref" "refs/heads/$branch" 2>/dev/null \
+    && verdict 0 current "branch=$branch"
+git merge-base --is-ancestor "refs/heads/$branch" "$default_ref" 2>/dev/null \
+    || verdict 0 diverged "branch=$branch" "path=$root"
 
-git -C "$root" merge --ff-only --quiet "$default_ref" 2>/dev/null \
-    && printf 'freshen-main: fast-forwarded %s in %s\n' "$branch" "$root"
-exit 0
+if git -C "$root" merge --ff-only --quiet "$default_ref" >/dev/null 2>&1; then
+    verdict 0 fast-forwarded "branch=$branch" "path=$root"
+fi
+verdict 0 dirty "branch=$branch" "path=$root"
