@@ -1,6 +1,6 @@
 {
   "name": "gittools",
-  "version": "0.7.1",
+  "version": "0.7.2",
   "description": "Git and GitHub workflow utilities for Claude Code — a worktree-safe default-branch fast-forward after merge, and a race-proof wait for PR CI to go green",
   "author": {
     "name": "Nicholas Lonsinger",
