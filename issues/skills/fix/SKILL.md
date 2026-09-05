@@ -97,7 +97,11 @@ In `--follow-up` mode, deferred issues reported by completed pipelines join the 
 
 ## Per-Issue Workflow
 
-Launch every agent in the foreground — pass `run_in_background: false` explicitly (agents default to background). **Do not use `isolation: "worktree"`** — the pipeline works in the main repo tree and creates its branch in-place.
+Agents run asynchronously: a launch returns at once, and each time the agent stops you receive a task notification carrying its final message. Read that message as the agent's result, the same way whether it arrives in a blocking tool result or in a notification. **Do not use `isolation: "worktree"`** — the pipeline works in the main repo tree and creates its branch in-place.
+
+### Waiting turns
+
+An agent may stop with `STATUS: waiting | ON: <what>` while a background task of its own (a build, a test run, a CI watch, a Codex review) is running. The task's exit re-invokes the agent, which continues where it left off, so the next notification from the same agent carries its real result. A `waiting` result asks nothing of you: do not resume the agent, do not take over its work, do not poll. When nothing else is actionable, arm the watchdog and end your turn (Step 6) — the agent's next notification re-invokes you.
 
 ### Step 1: Plan (issues:issue-planner)
 
@@ -169,13 +173,26 @@ Confirmed review findings to apply:
 
 It applies the findings, re-tests, pushes, then merges (merge mode) or leaves the PR open and returns to the default branch (pr-only). Its terminal `STATUS: merged | pr-created | blocked` is the issue's outcome.
 
-### Step 6: Handle Stalls
+### Step 6: Wait, and Handle Stalls
 
-If any agent in the pipeline ends without its terminal `STATUS:` line — typically saying it is "waiting" for CI or a background task — the agent is done: notifications from tasks it orphaned may never be delivered. Do **not** end your turn to wait for one. Recover actively, in this order:
+While the pipeline is blocked on an agent — one you just launched, one that reported `waiting`, or one you just sent the finalize message — you have nothing to do until its next notification. Arm a watchdog as a **background** Bash command, then end your turn:
+
+```bash
+sleep 1800
+```
+
+Whichever comes first re-invokes you: the agent's notification or the watchdog's exit. On the agent's notification, act on its result; a watchdog that later fires with nothing outstanding is a no-op. Never end a turn with pending work and nothing armed to re-invoke you.
+
+A **stall** is either of:
+
+- An agent stops with neither a terminal `STATUS:` nor `STATUS: waiting` — a summary of in-flight work, a question, a "waiting for" sentence outside the `STATUS` form.
+- The watchdog fires and the agent has not reported since it was armed. Re-arm once; if the second watchdog fires with still no report, treat it as a stall.
+
+Recover actively, in this order:
 
 1. Check ground truth yourself: `gh pr view <PR> --json state,headRefOid,mergeStateStatus,statusCheckRollup` and `gh issue view <N> --json state`.
-2. If everything left is mechanical — waiting for CI, merging, cleanup — finish it yourself with **blocking foreground** calls, to the same bar the implementer holds: merge per project conventions only on a verified green, and only in `--merge` mode.
-3. Only if substantive work remains (unfixed findings, failing checks needing code changes), resume that agent once via SendMessage with explicit instructions to finish synchronously and return a terminal `STATUS:`. If it returns non-terminal a second time, take over per step 2 or record the issue as `blocked` — do not resume it again.
+2. If everything left is mechanical — waiting for CI, merging, cleanup — finish it yourself, to the same bar the implementer holds: merge per project conventions only on a verified green, and only in `--merge` mode. A CI wait is a background run of the project's CI-wait skill with the watchdog pattern above.
+3. Only if substantive work remains (unfixed findings, failing checks needing code changes), resume that agent once via SendMessage with explicit instructions to finish and return a terminal `STATUS:`. If it stalls a second time, take over per step 2 or record the issue as `blocked` — do not resume it again.
 
 The same applies if a SendMessage result says the message was queued but the recipient never responds: re-send once, then take over.
 
@@ -214,7 +231,7 @@ Mark follow-up issues as such in the notes. Without `--follow-up`, list any repo
 ## Important Notes
 
 - Process issues **one at a time**, serially. Do not run two pipelines in parallel — they share the repo tree.
-- **Never end your turn while work is pending.** A run ends only by printing the Summary Report — with the queue empty and every pipeline terminal. Ending a turn to "wait for a notification" is how runs silently die: if you are ever tempted to write "waiting for…", switch to a blocking foreground wait or take the remaining steps over yourself (see Step 6).
+- **End a turn only to wait on a live agent, with the watchdog armed** (Step 6). A run ends only by printing the Summary Report — with the queue empty and every pipeline terminal. Ending a turn with pending work and nothing armed to re-invoke you is how a run dies silently.
 - Always re-fetch issues between iterations — the list may have changed.
 - Respect issue dependencies. Do not process an issue that is blocked by another open issue.
 - The planner closing an issue as stale or not worth fixing is a valid, successful outcome — do not re-open or retry it.

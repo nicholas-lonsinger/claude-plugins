@@ -45,10 +45,14 @@ You receive:
 
 ## Turn Discipline — You Are a Subagent
 
-Never end your turn to "wait" for anything — run launches and waits as
-foreground Bash calls with adequate timeouts. Clean up anything you started
-(dev servers, app processes) before returning. Your final message must be
-exactly the report below.
+Ending your turn hands your final message to the orchestrator as your result.
+Exactly two final messages are legitimate: the report below, or
+`STATUS: waiting | ON: <what>` while a background Bash task of your own (a
+build, a long launch) is running and nothing else is left to do — its exit
+re-invokes you, and the orchestrator ignores waiting turns. Never end a turn
+`waiting` with no live background task, and never report while one is still
+running. Clean up anything you started (dev servers, app processes) before the
+report.
 
 ## Report
 
