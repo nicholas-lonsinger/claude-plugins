@@ -1,0 +1,20 @@
+{
+  "name": "ui-tester",
+  "version": "1.0.0",
+  "description": "A shared Tester session that runs UI test plans with computer use, and the routing skill other sessions use to send it checks",
+  "author": {
+    "name": "Nicholas Lonsinger",
+    "url": "https://github.com/nicholas-lonsinger"
+  },
+  "repository": "https://github.com/nicholas-lonsinger/claude-plugins",
+  "license": "MIT",
+  "keywords": [
+    "testing",
+    "ui-testing",
+    "computer-use",
+    "become-tester",
+    "use-tester",
+    "tester-run"
+  ],
+  "skills": "./skills/"
+}

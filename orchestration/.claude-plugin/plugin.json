@@ -1,0 +1,21 @@
+{
+  "name": "orchestration",
+  "version": "1.0.0",
+  "description": "Subagent orchestration for Claude Code — delegate issues to subagents, log judged launches and their effort levels, calibrate the effort table from that log, and name sessions",
+  "author": {
+    "name": "Nicholas Lonsinger",
+    "url": "https://github.com/nicholas-lonsinger"
+  },
+  "repository": "https://github.com/nicholas-lonsinger/claude-plugins",
+  "license": "MIT",
+  "keywords": [
+    "subagents",
+    "orchestration",
+    "effort",
+    "oversee",
+    "calibrate",
+    "effort-log",
+    "name-session"
+  ],
+  "skills": "./skills/"
+}
