@@ -216,7 +216,7 @@ import chain described under "How it works". Four sub-steps, all idempotent:
 ## Step 7: Link the current project and verify
 
 ```bash
-"${CLAUDE_PLUGIN_ROOT}/scripts/claude-sync.sh" pull
+"${CLAUDE_PLUGIN_ROOT}/scripts/claude-sync.sh" pull </dev/null
 git -C <store-dir> config merge.claude-ai.driver  # → current plugin cache path
 git -C <store-dir> status --short --branch        # clean, tracking origin/main
 ls -la ~/.claude/projects/ | head                 # current project's memory → symlink?
@@ -232,7 +232,10 @@ real memory, it's adopted into `memory/<name>/` and replaced with a symlink
 (verify with `ls -la`). Other projects adopt lazily at their next session.
 If this session's project had its memory adopted just now, or Step 6 changed
 store content, push it:
-`"${CLAUDE_PLUGIN_ROOT}/scripts/claude-sync.sh" push`.
+`"${CLAUDE_PLUGIN_ROOT}/scripts/claude-sync.sh" push </dev/null`.
+Every manual run of a hook script closes stdin (`</dev/null`): run from a
+skill, stdin is neither a terminal nor ever closed, so the script's fallback
+read of the hook's JSON would wait forever.
 `install-check.sh` validates the whole chain end-to-end — empty output means
 this machine is fully set up.
 

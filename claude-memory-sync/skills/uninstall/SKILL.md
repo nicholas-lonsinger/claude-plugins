@@ -67,7 +67,7 @@ Carry both answers forward: Q1 drives Step 7, Q2 drives Step 8.
 
 ```bash
 git -C "$STORE" status --short
-"${CLAUDE_PLUGIN_ROOT}/scripts/claude-sync.sh" push
+"${CLAUDE_PLUGIN_ROOT}/scripts/claude-sync.sh" push </dev/null   # stdin closed, or it waits for hook JSON
 git -C "$STORE" log --oneline origin/main..HEAD   # should be empty
 ```
 
