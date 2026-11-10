@@ -130,6 +130,43 @@ for the commit it pushed.
 
 **Requirements:** `gh` (authenticated), `git`
 
+### ui-tester
+
+A shared Tester session that owns the screen: one Claude desktop app session
+per repository builds the app, holds the computer-use grants, and runs the UI
+test plans other sessions send it, one at a time from a queue.
+
+| Skill | Command | Description |
+|-------|---------|-------------|
+| become-tester | `/ui-tester:become-tester` | Turn this session into the repository's Tester and serve queued test plans |
+| use-tester | `/ui-tester:use-tester` | Route a check that needs computer use to the Tester session, and act on its per-step verdicts |
+
+Each plan runs in a foreground `ui-tester:tester-run` subagent
+(`agents/tester-run.md`). Bundled hooks keep a Tester session's on-disk queue
+safe across compaction: a `PreCompact` hook holds off automatic compaction
+while a run is in progress, and a `SessionStart` hook puts the queue and state
+back in front of the session after one. Both act only in sessions started with
+`TESTER_SESSION=1`.
+
+**Requirements:** the Claude desktop app with computer use, `jq`, macOS
+
+### orchestration
+
+Subagent orchestration: delegate a task phase by phase while the main session
+keeps the decisions, and calibrate the effort level each kind of launch gets.
+
+| Skill | Command | Description |
+|-------|---------|-------------|
+| oversee | `/orchestration:oversee` | Plan, implement, review, verify and deliver an issue or task, each phase delegated to a subagent |
+| calibrate | `/orchestration:calibrate` | Run under-tested task-table rows as pairs against the level below for the rest of the session |
+| effort-log | `/orchestration:effort-log` | Record a judged launch in the cross-machine effort log and report when a row's level should move |
+| name-session | `/orchestration:name-session` | Rename the session to its issue number and a short summary |
+
+The effort log and the task table it reads live in the claude-memory-sync
+user store, so `effort-log` needs that plugin installed.
+
+**Requirements:** `python3`, `gh` (authenticated), the claude-memory-sync plugin
+
 ## Adding Plugins
 
 Each plugin lives in its own subdirectory with a `.claude-plugin/plugin.json` manifest. See the `issues/` directory for an example of the expected structure.

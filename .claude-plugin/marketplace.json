@@ -30,6 +30,18 @@
       "description": "Cross-machine sync for Claude Code's per-project memory and user-scope instructions — git-backed private state repo with AI-assisted semantic merge",
       "source": "./claude-memory-sync",
       "version": "0.5.8"
+    },
+    {
+      "name": "ui-tester",
+      "description": "A shared Tester session that runs UI test plans with computer use, and the routing skill other sessions use to send it checks",
+      "source": "./ui-tester",
+      "version": "1.0.0"
+    },
+    {
+      "name": "orchestration",
+      "description": "Subagent orchestration for Claude Code — delegate issues to subagents, log judged launches and their effort levels, calibrate the effort table from that log, and name sessions",
+      "source": "./orchestration",
+      "version": "1.0.0"
     }
   ]
 }
