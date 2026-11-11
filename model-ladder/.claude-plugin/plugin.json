@@ -1,0 +1,19 @@
+{
+  "name": "model-ladder",
+  "version": "1.0.0",
+  "description": "Re-derive which model and effort each subagent task-table row runs on, from task-specific benchmark cost per task, Anthropic's model guidance, and the effort log",
+  "author": {
+    "name": "Nicholas Lonsinger",
+    "url": "https://github.com/nicholas-lonsinger"
+  },
+  "repository": "https://github.com/nicholas-lonsinger/claude-plugins",
+  "license": "MIT",
+  "keywords": [
+    "subagents",
+    "models",
+    "effort",
+    "benchmarks",
+    "refresh"
+  ],
+  "skills": "./skills/"
+}

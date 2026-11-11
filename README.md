@@ -153,7 +153,8 @@ back in front of the session after one. Both act only in sessions started with
 ### orchestration
 
 Subagent orchestration: delegate a task phase by phase while the main session
-keeps the decisions, and calibrate the effort level each kind of launch gets.
+keeps the decisions, and calibrate the effort level each kind of launch gets on
+its row's model.
 
 | Skill | Command | Description |
 |-------|---------|-------------|
@@ -166,6 +167,20 @@ The effort log and the task table it reads live in the claude-memory-sync
 user store, so `effort-log` needs that plugin installed.
 
 **Requirements:** `python3`, `gh` (authenticated), the claude-memory-sync plugin
+
+### model-ladder
+
+Re-derive the model and effort each row of the orchestration task table runs
+on, when a new model ships or the guidance or plan limits change. Subagents
+collect task-specific benchmark scores and cost per task at every effort level;
+the main session blends them with Anthropic's model guidance and the effort log
+and proposes table changes for approval. Enable it only when you need it.
+
+| Skill | Command | Description |
+|-------|---------|-------------|
+| refresh | `/model-ladder:refresh` | Gather per-task benchmark costs, propose each row's model and effort, and apply them once approved |
+
+**Requirements:** the orchestration and claude-memory-sync plugins
 
 ## Adding Plugins
 

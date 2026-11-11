@@ -1,6 +1,6 @@
 ---
 name: effort-log
-description: Record a judged subagent launch — its task-table row, effort level, and whether it met its Done — in the cross-machine effort log, and report when the evidence moves a row's level. Use after judging the result of every subagent launch, and for the per-row tally that calibration reads.
+description: Record a judged subagent launch — its task-table row, model, effort level, and whether it met its Done — in the cross-machine effort log, and report when the evidence moves a row's level. Use after judging the result of every subagent launch, and for the per-row tally that calibration reads.
 ---
 
 # Effort log
@@ -13,7 +13,7 @@ Log a launch once, at the gate that judges its Done and before any follow-up mes
 
     "${CLAUDE_PLUGIN_ROOT}/scripts/effort-log" add --row <key> --level <level> --outcome <outcome> --model <id> (--agent <agentId> | --workflow <runId> --label <label>) [--role <role> --pair <id>]
 
-- `--model` — the exact id the subagent ran on (`claude-opus-5-5`, never an alias); the evidence counts per model, and the script refuses an id the transcript disagrees with.
+- `--model` — the exact id the subagent ran on (`claude-opus-5-5`, never an alias); the evidence counts per model, and the script refuses an id the transcript disagrees with or one off the row's model.
 - `--outcome`
   - `met` — met its Done. A pair's lower run is `met` only if it also missed nothing the brief needed that the upper caught.
   - `missed` — fell short for a reason more effort could fix.
@@ -26,4 +26,4 @@ Output starting `LEVEL CHANGE` names a row whose Effort cell in the table should
 
 ## Tally
 
-`effort-log tally` prints each row's evidence at its current level for the current model, with a verdict: `raise`, `drop`, `probe` (too few pair comparisons against the level below), or `hold`.
+`effort-log tally` prints each row's evidence at its current level on the row's model, newest exact id, with a verdict: `raise`, `drop`, `probe` (too few pair comparisons against the level below), or `hold`.
