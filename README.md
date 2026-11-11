@@ -153,13 +153,15 @@ back in front of the session after one. Both act only in sessions started with
 ### orchestration
 
 Subagent orchestration: delegate a task phase by phase while the main session
-keeps the decisions, and calibrate the effort level each kind of launch gets.
+keeps the decisions, and calibrate the effort level each kind of launch gets on
+its row's model.
 
 | Skill | Command | Description |
 |-------|---------|-------------|
 | oversee | `/orchestration:oversee` | Plan, implement, review, verify and deliver an issue or task, each phase delegated to a subagent |
 | calibrate | `/orchestration:calibrate` | Run under-tested task-table rows as pairs against the level below for the rest of the session |
 | effort-log | `/orchestration:effort-log` | Record a judged launch in the cross-machine effort log and report when a row's level should move |
+| refresh-ladder | `/orchestration:refresh-ladder` | When new models ship, gather task-specific benchmark costs, propose each row's model and effort, and apply them once approved |
 | name-session | `/orchestration:name-session` | Rename the session to its issue number and a short summary |
 
 The effort log and the task table it reads live in the claude-memory-sync

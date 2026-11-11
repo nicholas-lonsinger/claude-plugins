@@ -6,8 +6,10 @@
                  [--role ROLE] [--pair ID]
   effort-log tally [--model ID]
 
-Row keys and each row's current level are read from the task table in the
-synced user CLAUDE.md. Each session appends to its own TSV in the sync
+Row keys and each row's model and current level are read from the task
+table in the synced user CLAUDE.md. A row's evidence is the launches on its
+model, counted per exact model id, so a new model version starts every
+row's evidence fresh. Each session appends to its own TSV in the sync
 store, so sessions and machines never write the same file.
 """
 import argparse
@@ -27,7 +29,8 @@ ROW_LEVELS = ["low", "medium", "high"]  # a row's level stays in this range
 LEVELS = ROW_LEVELS + ["xhigh"]  # xhigh is reached only by escalation
 OUTCOMES = ["met", "missed", "brief", "inconclusive"]
 ROLES = ["single", "upper", "lower", "escalation"]
-ALIASES = {"opus", "sonnet", "haiku", "fable", "inherit"}
+MODELS = ["haiku", "sonnet", "opus", "fable"]  # a row's Model cell; exact ids are claude-<model>-…
+ALIASES = set(MODELS) | {"inherit"}
 
 WINDOW = 5  # most recent runs, and most recent pair comparisons, a verdict reads
 RAISE_AT = 2  # misses at the row's level within WINDOW that raise it
@@ -41,9 +44,15 @@ MEASURES = [
 ]
 COLUMNS = ["time", "model", "row", "level", "role", "pair", "outcome"] + MEASURES
 PROJECTS = Path.home() / ".claude/projects"
-ROW_RE = re.compile(r"^\|\s*`([a-z0-9-]+)`\s*\|.*\|([^|]*)\|\s*$")
+ROW_RE = re.compile(r"^\|\s*`([a-z0-9-]+)`\s*\|.*\|([^|]*)\|([^|]*)\|\s*$")
 # The Effort cell is a level, optionally ", unpaired": the tally never asks to pair that row.
 EFFORT_RE = re.compile(r"^(low|medium|high)(, unpaired)?$")
+
+
+def family(model_id):
+    """The Model-cell name an exact id belongs to: claude-opus-5-5 → opus."""
+    parts = model_id.split("-")
+    return parts[1] if len(parts) > 1 and parts[0] == "claude" else None
 
 
 def fail(message):
@@ -60,13 +69,16 @@ def read_table():
     for line in lines:
         match = ROW_RE.match(line)
         if match:
-            effort = EFFORT_RE.match(match.group(2).strip())
+            model = match.group(2).strip()
+            if model not in MODELS:
+                fail(f"row `{match.group(1)}` in {TABLE}: Model cell {model!r} is not one of {', '.join(MODELS)}")
+            effort = EFFORT_RE.match(match.group(3).strip())
             if not effort:
-                fail(f"row `{match.group(1)}` in {TABLE}: Effort cell {match.group(2).strip()!r} "
+                fail(f"row `{match.group(1)}` in {TABLE}: Effort cell {match.group(3).strip()!r} "
                      "is not low, medium, or high, optionally followed by ', unpaired'")
-            table[match.group(1)] = (effort.group(1), effort.group(2) is not None)
+            table[match.group(1)] = (model, effort.group(1), effort.group(2) is not None)
     if not table:
-        fail(f"no task-table rows (| `key` | task | level |) found in {TABLE}")
+        fail(f"no task-table rows (| `key` | task | model | effort |) found in {TABLE}")
     return table
 
 
@@ -233,6 +245,10 @@ def command_add(args):
         fail(f"unknown row '{args.row}'; add it to the task table first. Rows: {', '.join(table)}")
     if args.model.lower() in ALIASES or not args.model.startswith("claude-"):
         fail(f"--model takes the exact model id (claude-…), not '{args.model}'")
+    row_model = table[args.row][0]
+    if family(args.model) != row_model:
+        fail(f"row '{args.row}' runs on {row_model}, so a run on {args.model} is not its evidence; "
+             "a launch and its escalation stay on the row's model")
     if (args.role in ("upper", "lower")) != bool(args.pair):
         fail("--pair is required for --role upper/lower and only for them")
     session = os.environ.get("CLAUDE_CODE_SESSION_ID")
@@ -258,7 +274,7 @@ def command_add(args):
             args.outcome, *(measured[m] for m in MEASURES),
         ])
 
-    level, unpaired = table[args.row]
+    _, level, unpaired = table[args.row]
     result = evaluate(read_log(), args.row, level, args.model, not unpaired)
     print(f"logged {args.row} {args.level} {args.role} {args.outcome}: {measured['requests']} requests, "
           f"{measured['model_secs']}s model, {measured['tool_secs']}s tools, {measured['idle_secs']}s idle")
@@ -275,15 +291,23 @@ def command_add(args):
 def command_tally(args):
     table = read_table()
     entries = read_log()
-    model = args.model or (entries[-1]["model"] if entries else None)
-    print(f"model: {model or '(nothing logged yet)'}")
-    print(f"{'row':<14}{'level':<8}{'runs':>6}{'miss':>6}{'pairs':>7}{'won':>5}{'brief':>7}  verdict")
-    for row, (level, unpaired) in table.items():
+    if args.model and not family(args.model):
+        fail(f"--model takes the exact model id (claude-…), not '{args.model}'")
+    print(f"{'row':<17}{'model':<20}{'level':<8}{'runs':>6}{'miss':>6}{'pairs':>7}{'won':>5}{'brief':>7}  verdict")
+    for row, (row_model, level, unpaired) in table.items():
+        if args.model and family(args.model) == row_model:
+            model = args.model
+        else:
+            logged = [e["model"] for e in entries if e["row"] == row and family(e["model"]) == row_model]
+            model = logged[-1] if logged else None
+        if not model:
+            print(f"{row:<17}{row_model:<20}{level:<8}  nothing logged on {row_model} yet")
+            continue
         r = evaluate(entries, row, level, model, not unpaired)
         detail = f" — {r['reason']}" if r["reason"] else ""
-        print(f"{row:<14}{level:<8}{r['runs']:>6}{r['misses']:>6}{r['pairs']:>7}{r['wins']:>5}"
+        print(f"{row:<17}{model:<20}{level:<8}{r['runs']:>6}{r['misses']:>6}{r['pairs']:>7}{r['wins']:>5}"
               f"{r['briefs']:>7}  {r['verdict']}{detail}")
-    orphans = sorted({e["row"] for e in entries if e["model"] == model} - set(table))
+    orphans = sorted({e["row"] for e in entries} - set(table))
     if orphans:
         print(f"logged rows no longer in the table: {', '.join(orphans)}")
 
@@ -308,7 +332,8 @@ def main():
     add.set_defaults(handler=command_add)
 
     tally = commands.add_parser("tally", help="per-row evidence and verdicts")
-    tally.add_argument("--model", help="model id to tally (default: the newest entry's)")
+    tally.add_argument("--model", help="exact model id to tally the rows on its model with "
+                                        "(default: each row's newest logged id on its model)")
     tally.set_defaults(handler=command_tally)
 
     args = parser.parse_args()
