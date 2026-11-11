@@ -161,26 +161,13 @@ its row's model.
 | oversee | `/orchestration:oversee` | Plan, implement, review, verify and deliver an issue or task, each phase delegated to a subagent |
 | calibrate | `/orchestration:calibrate` | Run under-tested task-table rows as pairs against the level below for the rest of the session |
 | effort-log | `/orchestration:effort-log` | Record a judged launch in the cross-machine effort log and report when a row's level should move |
+| refresh-ladder | `/orchestration:refresh-ladder` | When new models ship, gather task-specific benchmark costs, propose each row's model and effort, and apply them once approved |
 | name-session | `/orchestration:name-session` | Rename the session to its issue number and a short summary |
 
 The effort log and the task table it reads live in the claude-memory-sync
 user store, so `effort-log` needs that plugin installed.
 
 **Requirements:** `python3`, `gh` (authenticated), the claude-memory-sync plugin
-
-### model-ladder
-
-Re-derive the model and effort each row of the orchestration task table runs
-on, when a new model ships or the guidance or plan limits change. Subagents
-collect task-specific benchmark scores and cost per task at every effort level;
-the main session blends them with Anthropic's model guidance and the effort log
-and proposes table changes for approval. Enable it only when you need it.
-
-| Skill | Command | Description |
-|-------|---------|-------------|
-| refresh | `/model-ladder:refresh` | Gather per-task benchmark costs, propose each row's model and effort, and apply them once approved |
-
-**Requirements:** the orchestration and claude-memory-sync plugins
 
 ## Adding Plugins
 

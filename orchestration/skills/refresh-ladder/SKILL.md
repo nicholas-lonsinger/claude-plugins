@@ -1,5 +1,5 @@
 ---
-name: refresh
+name: refresh-ladder
 description: Re-derive the model and effort each row of the subagent task table runs on — from task-specific benchmark scores and cost per task at every effort level, Anthropic's model guidance, and the effort log — and propose the table changes for approval. Use when a new Claude model or version ships, Anthropic publishes new model-choice guidance, or a plan's usage limits change.
 argument-hint: "[what changed, e.g. a new model]"
 disable-model-invocation: true
@@ -64,4 +64,4 @@ Sources worth pointing it at:
 
 Wait for the user's approval.
 
-**5. Apply.** Edit the Model and Effort cells in the task table, the one place they live. Change the ladder memory only if a rule changed. Run the effort log's tally to confirm the table still parses. A row whose model moves to a new version shows nothing logged until its first judged launch: its evidence starts fresh.
+**5. Apply.** Edit the Model and Effort cells in the task table, the one place they live. Change the ladder memory only if a rule changed. Run `"${CLAUDE_PLUGIN_ROOT}/scripts/effort-log" tally` to confirm the table still parses. A row whose model moves to a new version shows nothing logged until its first judged launch: its evidence starts fresh.
