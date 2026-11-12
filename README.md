@@ -142,7 +142,9 @@ test plans other sessions send it, one at a time from a queue.
 | use-tester | `/ui-tester:use-tester` | Route a check that needs computer use to the Tester session, and act on its per-step verdicts |
 
 Each plan runs in a foreground `ui-tester:tester-run` subagent
-(`agents/tester-run.md`). Bundled hooks keep a Tester session's on-disk queue
+(`agents/tester-run.md`), except a plan with a step only the user can do,
+which the Tester drives in its own session by the same brief so the user can
+message it mid-run. Bundled hooks keep a Tester session's on-disk queue
 safe across compaction: a `PreCompact` hook holds off automatic compaction
 while a run is in progress, and a `SessionStart` hook puts the queue and state
 back in front of the session after one. Both act only in sessions started with
