@@ -42,5 +42,7 @@ Global memory files use the same format as per-project auto-memory files
 (frontmatter with `name`/`description`/`metadata.type`, one fact per file)
 and live adjacent to their index, `{{DATA}}/user/MEMORY.md` — one
 `- [Title](file.md) — hook` line per memory. Growth belongs in indexed
-memories, not the always-load file. Synced files are committed and pushed
-automatically at session boundaries — never run git in the store yourself.
+memories, not the always-load file. The plugin commits and pushes synced files at session boundaries, so never
+run a git command that changes the store or its remote yourself — add,
+commit, pull, push, merge, rebase, reset, stash, checkout. Reading it is
+fine: log, show, diff, blame, status.
