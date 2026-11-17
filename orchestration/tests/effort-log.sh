@@ -150,14 +150,16 @@ for spec in "late haiku $HAIKU" "wide opus $OPUS"; do
 done
 expect_cells "before A syncs, haiku low needs 10 after the low miss" late \
     setting='haiku medium' streak='4 of 10 for haiku low'
+expect_cells "before A syncs, the low miss restarts the opus row's count for every cheaper setting" wide \
+    setting='opus medium' path='opus medium' streak='4 of 10 for opus low'
 for spec in "late $HAIKU" "wide $OPUS"; do
     read -r key id <<<"$spec"
     at machine-a 12.500 run "$id" "$key" medium single missed
 done
 expect_cells "after A's late medium miss, B's low miss still counts after it: haiku low still needs 10" late \
     setting='haiku medium' path='haiku medium' misses='0/5' streak='4 of 10 for haiku low'
-expect_cells "the opus row is not at opus low: sonnet medium, undominated by opus low, takes the streak after A's miss" wide \
-    setting='sonnet medium' path='opus medium → sonnet medium' streak='0 of 10 for sonnet low'
+expect_cells "after A's late miss the opus row is still at opus medium, opus low still needing 10" wide \
+    setting='opus medium' path='opus medium' streak='4 of 10 for opus low'
 
 echo "2. arrival order and file layout never change the result"
 # The same entries, laid out three ways: one file in time order; one file per
@@ -297,8 +299,14 @@ base dom opus medium
 adds 5 $OPUS dom medium met
 expect_out "five mets step down" '^STEP DOWN: dom opus medium → opus low \(streak 5 of 5\)$' "$OUT"
 adds 1 $OPUS dom low missed
-expect_out "the miss moves the row to sonnet medium, which opus low does not dominate: it needs 5" \
-    '^MOVE: dom opus low → sonnet medium \(streak 5 of 5\)$' "$OUT"
+expect_out "a failed probe sends the row back up, not on to another cheaper setting" \
+    '^STEP UP: dom opus low → opus medium ' "$OUT"
+expect_cells "the streak that paid for the probe is spent" dom setting='opus medium' streak='0 of 10 for opus low'
+adds 4 $OPUS dom medium met
+expect_none "four new mets hold" '^(STEP|MOVE)' "$ALL"
+adds 1 $OPUS dom medium met
+expect_out "the fifth pays for sonnet medium, which opus low does not dominate: it needs 5" \
+    '^STEP DOWN: dom opus medium → sonnet medium \(streak 5 of 5\)$' "$OUT"
 expect_cells "sonnet low, which opus low dominates, needs 10" dom setting='sonnet medium' streak='0 of 10 for sonnet low'
 adds 4 $SONNET dom medium met
 expect_none "four sonnet mets hold" '^(STEP|MOVE)' "$ALL"
@@ -316,7 +324,7 @@ adds 2 claude-opus-5-6 ver medium met
 expect_out "mets on 5-5 and 5-6 make one streak" '^STEP DOWN: ver opus medium → opus low \(streak 5 of 5\)$' "$OUT"
 adds 1 claude-opus-5-5 ver low missed
 adds 1 claude-opus-5-6 ver medium met
-expect_cells "a run on 5-6 leaves 5-5's miss counted" ver setting='sonnet medium' streak='0 of 10 for sonnet low'
+expect_cells "a run on 5-6 leaves 5-5's miss counted" ver setting='opus medium' streak='1 of 10 for opus low'
 base ver opus medium
 expect_cells "a fresh baseline starts the evidence over" ver \
     setting='opus medium' misses='0/0' streak='0 of 5 for opus low' baseline='opus medium fresh'
@@ -448,7 +456,7 @@ adds 5 $OPUS esc medium met
 expect_out "a step down is named" '^STEP DOWN: esc opus medium → opus low \(streak 5 of 5\)$' "$OUT"
 expect_none "a run at the row's setting is not noted" '^note:' "$OUT"
 adds 1 $OPUS esc low missed
-expect_out "a lateral move is a MOVE" '^MOVE: esc opus low → sonnet medium \(streak 5 of 5\)$' "$OUT"
+expect_out "a probe's miss is a step up" '^STEP UP: esc opus low → opus medium ' "$OUT"
 out="$(add u-1 $OPUS --row none --level medium --outcome met)"
 expect_out "a row with no baseline warns" '^none has no setting yet: record one with effort-log baseline$' "$out"
 if grep -q 'u-1' "$CASE/log/$SESSION.tsv"; then ok; else fail "the run of a row with no baseline is not logged"; fi

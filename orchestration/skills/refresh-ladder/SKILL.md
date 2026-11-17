@@ -64,4 +64,4 @@ Sources worth pointing it at:
 
 Wait for the user's approval.
 
-**5. Apply.** For each row whose model or effort changes, record a baseline in the effort log, the one place settings live: `"${CLAUDE_PLUGIN_ROOT}/scripts/effort-log" baseline --row <key> --model <model> --level <level> --note "refresh-ladder: <what changed>"`. Change the ladder memory only if a rule changed. Run `"${CLAUDE_PLUGIN_ROOT}/scripts/effort-log" tally` to confirm each row shows its new setting. A new version of a model needs no baseline: its rows keep their settings and evidence.
+**5. Apply.** For each row whose model or effort changes, record a baseline in the effort log, the one place settings live: `"${CLAUDE_PLUGIN_ROOT}/scripts/effort-log" baseline --row <key> --model <model> --level <level> --note "refresh-ladder: <what changed>"`. Change the ladder memory only if a rule changed. Run `"${CLAUDE_PLUGIN_ROOT}/scripts/effort-log" tally` to confirm each row shows its new setting. A new version of a model keeps every row's setting and evidence; to re-test cheaper settings on it, record a fresh baseline at a row's current setting, which leaves the misses before it behind.

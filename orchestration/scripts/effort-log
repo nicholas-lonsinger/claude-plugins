@@ -479,8 +479,13 @@ class Evidence:
         return STREAK * 2 ** sum(len(self.misses(y)) for y in self.region(c, s))
 
     def streak(self, s, c):
-        """The met runs at s after the latest miss at s or in region(c, s)."""
-        times = self.misses(s) + [at for y in self.region(c, s) for at in self.misses(y)]
+        """The met runs at s after the latest miss at s, at any setting below it, or in region(c, s).
+
+        A miss anywhere below s restarts the count, so one streak pays for one probe: a failed
+        probe never lets the same mets send the row straight on to another cheaper setting.
+        """
+        below = [y for y in SETTINGS if dominates(s, y)]
+        times = [at for y in below + self.region(c, s) for at in self.misses(y)]
         since = max(times) if times else None
         return sum(1 for at, outcome in self.runs[s] if outcome == "met" and (since is None or at > since))
 

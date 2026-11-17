@@ -16,29 +16,33 @@ Log a launch once, at the gate that judges its Done and before any follow-up mes
     "${CLAUDE_PLUGIN_ROOT}/scripts/effort-log" add --row <key> --level <level> --outcome <outcome> --model <id> (--agent <agentId> | --workflow <runId> --label <label>) [--role escalation] [--note <text>]
 
 - `--model` — the exact id the subagent ran on (`claude-opus-5-5`, never an alias); the script refuses an id the transcript disagrees with.
-- `--level` — the effort the run used. A run at a setting other than the row's current one, such as one launched before a move reached this session, is logged as evidence that doesn't move the row.
+- `--level` — the effort the run used. A run at a setting other than the row's current one, such as one launched before a move reached this session, counts at the setting it ran at.
 - `--outcome`
   - `met` — met its Done as returned.
   - `missed` — fell short for a reason more effort could fix, whether the remedy was a correction to the same agent or a rerun a level up.
   - `brief` — fell short because the brief lacked what the work needed, including a check the run could have executed that would have caught the miss, such as a test through the caller a fix stopped short of. `--note` names what the brief lacked.
   - `inconclusive` — nothing shows whether it met its Done.
-- `--role escalation` — the rerun a level up after a `missed`; it never moves the row.
+- `--role escalation` — the rerun a level up after a `missed`; it counts at the level it ran at.
 - `--agent` — the `agentId` an Agent launch returned. A Workflow never shows main its agents' ids, so a Workflow `agent()` is named instead by the completion's Run ID and the `label` the script gave it — one label per agent you log, since the script refuses a label shared by several agents or one whose result was reused from an earlier run. The script records the run's requests, tool calls, tokens by kind, and model, tool, and idle seconds from its transcript — the only lasting copy, since transcripts stay on this machine. No verdict reads them: a row moves on Done alone.
 
 ## Set a row by judgment
 
     "${CLAUDE_PLUGIN_ROOT}/scripts/effort-log" baseline --row <key> --model <haiku|sonnet|opus|fable> --level <low|medium|high> --note <who and why>
 
-A baseline sets a row's setting outright and starts its run there fresh. A new row needs one before its runs count; refresh-ladder records one for each row it changes. `--carry` keeps the row's earlier unbroken run of results at that setting instead of starting fresh, and `--from-table` takes one baseline per row from the table's Model and Effort columns.
+A baseline sets the setting a row's computation starts from, and from then on only runs logged after it count as the row's evidence. A new row needs one before its runs count; refresh-ladder records one for each row it changes and for each row it wants re-probed on a new model version. `--carry` keeps the row's earlier runs as evidence too, and `--from-table` takes one baseline per row from the table's Model and Effort columns.
 
 ## How a row moves
 
-- **Step down** — only for a row whose Oracle is `yes`. After a streak of clean runs at its setting, the row moves one rung down: effort first, then the next cheaper model at the same effort (opus → sonnet → haiku). A setting the row stepped up out of on the model's current version bounds every setting at or below it: each such failure doubles the streak a step there needs. Failures don't fade within a version, since each one is a probe of that same model; a new version clears them.
-- **Step up** — a miss within the first few runs after a step down returns the row to the setting it came from. Repeated misses in its recent runs at its setting move any row one rung up, effort first. A row whose misses come at the top of its ladder (opus or Fable at high) holds for refresh-ladder.
+Every run counts at the setting it ran at, whichever session or machine logged it and whenever its file synced. A row's setting is recomputed from that evidence on every read, starting at its baseline:
+
+- **Step up** — while the setting's recent runs keep missing (the latest among them a miss), the row moves one rung up, effort first, then the next model (haiku → sonnet → opus). A row whose misses come at the top of its ladder (opus or Fable at high) holds for refresh-ladder.
+- **Step down** — only for a row whose Oracle is `yes`. After a streak of clean runs, counted since the latest miss at its setting or any setting below it, the row moves one rung down: effort first, then the next cheaper model at the same effort. So one streak pays for one probe. A miss at a setting below the baseline sends the row back up, even after a long clean run there, and every miss at a setting, or at one dominating it, doubles the streak a step onto it needs.
 - **Hold** — everything else. A row without an oracle never steps down: a miss there can go unseen, so a clean streak proves nothing.
 
-Evidence counts across a model's versions, so a new version keeps each row's setting and streak. The log never moves a row onto or off Fable. `brief` and `inconclusive` outcomes never move a row.
+The log never moves a row onto or off Fable. `brief` and `inconclusive` outcomes never move a row. Model versions pool: a new version is re-probed only when a baseline says so.
+
+Because settings are recomputed rather than stored, a change to the script's thresholds or to a row's Oracle cell can move rows from the same evidence. Record baselines alongside such a change when rows should stay where they are.
 
 ## Tally
 
-`effort-log tally` prints each row's setting, how it got there, its streak, recent misses and last action, then the rows where `brief` misses cluster, with their notes. A flagged row's briefs keep lacking something: from the notes, propose to the user what that row's briefs should carry — its Task text in the table, or the brief guidance beside it.
+`effort-log tally` prints each row's baseline, setting, the path from one to the other, its streak and recent misses, then the rows where `brief` misses cluster, with their notes. A flagged row's briefs keep lacking something: from the notes, propose to the user what that row's briefs should carry — its Task text in the table, or the brief guidance beside it.
