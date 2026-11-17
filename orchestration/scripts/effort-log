@@ -463,7 +463,9 @@ class Fold:
     def step(self, entry, row, state, direction, target, reason):
         source = state["setting"]
         if direction == "up":
-            self.failures[(row, source, self.current(source[0]))] += 1
+            # The failure belongs to the version that missed; a carried baseline has no run, so its current one.
+            ran_on = entry["model"] if entry["kind"] == "run" else self.current(source[0])
+            self.failures[(row, source, ran_on)] += 1
         state.update(setting=target, entered=direction, came_from=source if direction == "down" else None,
                      tenure=[], action=f"step {direction} {name(source)} → {name(target)}", reason=reason)
         self.events[entry["key"]]["step"] = {"direction": direction, "from": source, "to": target, "reason": reason}

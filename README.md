@@ -161,12 +161,13 @@ evidence of how its launches went.
 | Skill | Command | Description |
 |-------|---------|-------------|
 | oversee | `/orchestration:oversee` | Plan, implement, review, verify and deliver an issue or task, each phase delegated to a subagent |
-| effort-log | `/orchestration:effort-log` | Record a judged launch in the cross-machine effort log, which steps the row's model and effort in the task table |
+| effort-log | `/orchestration:effort-log` | Record a judged launch in the cross-machine effort log, whose evidence sets each task-table row's model and effort |
 | refresh-ladder | `/orchestration:refresh-ladder` | When new models ship, gather task-specific benchmark costs, propose model and effort for the rows the log doesn't move, and apply them once approved |
 | name-session | `/orchestration:name-session` | Rename the session to its issue number and a short summary |
 
-The effort log and the task table it reads and updates live in the claude-memory-sync
-user store, so `effort-log` needs that plugin installed.
+The effort log and the task table it reads live in the claude-memory-sync user
+store, so `effort-log` needs that plugin installed. A SessionStart hook prints
+each row's current model and effort from the log.
 
 **Requirements:** `python3`, `gh` (authenticated), the claude-memory-sync plugin
 

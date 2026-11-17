@@ -1,6 +1,6 @@
 ---
 name: refresh-ladder
-description: Re-derive the model and effort of the subagent task-table rows the effort log doesn't move — rows without an oracle, and any row's move onto Fable — from task-specific benchmark scores and cost per task at every effort level and Anthropic's model guidance, and propose the table changes for approval. Use when a new Claude model or version ships, Anthropic publishes new model-choice guidance, or a plan's usage limits change.
+description: Re-derive the model and effort of the subagent task-table rows the effort log doesn't move — rows without an oracle, rows holding at the top of their ladder, and any row's move onto Fable — from task-specific benchmark scores and cost per task at every effort level and Anthropic's model guidance, and propose the changes for approval. Use when a new Claude model or version ships, Anthropic publishes new model-choice guidance, or a plan's usage limits change.
 argument-hint: "[what changed, e.g. a new model]"
 disable-model-invocation: true
 ---
@@ -9,18 +9,18 @@ disable-model-invocation: true
 
 $ARGUMENTS
 
-Run this in the main session: subagents gather the evidence, this session decides, and the user approves. Nothing in the task table or the ladder memory changes before that approval.
+Run this in the main session: subagents gather the evidence, this session decides, and the user approves. Nothing in the effort log, the task table or the ladder memory changes before that approval.
 
 ## Inputs
 
-- **The task table** in the user CLAUDE.md's orchestration section — each row's Oracle, model and effort. A row with an oracle is the effort log's, which steps it from its own runs; this skill weighs such a row only for a move onto Fable.
+- **The task table** in the user CLAUDE.md's orchestration section — each row's task and Oracle. A row with an oracle is the effort log's, which steps it from its own runs; this skill weighs such a row only for a move onto Fable or when it holds at the top of its ladder.
 - **The ladder memory** (`subagent-effort-ladder`) — the bar a row must clear to leave the default model, and any usage cap behind it. A new limit or bar the user states during this run is written there.
-- **The effort log's tally** — each row's setting, recent misses and verdict, and the rows where brief misses cluster. Clustered brief misses say a row's briefs need work, which no model change fixes.
+- **The effort log's tally** — each row's current model and effort, recent misses and last action, and the rows where brief misses cluster. Clustered brief misses say a row's briefs need work, which no model change fixes.
 - **Anthropic's current model guidance** — its which-model guide on claude.dev, the models overview on platform.claude.com, and each current model's launch post and system card. Its task-to-model table is the starting assumption for each row.
 
 ## Phases
 
-**1. Scope.** Name the current version of each model family and what changed since the table was last set. Sort the rows this skill sets by kind of work:
+**1. Scope.** Name the current version of each model family and what changed since the rows were last set. Sort the rows this skill sets by kind of work:
 
 | Kind of work | What measures it |
 |---|---|
@@ -64,4 +64,4 @@ Sources worth pointing it at:
 
 Wait for the user's approval.
 
-**5. Apply.** Edit the Model and Effort cells in the task table, the one place they live. Change the ladder memory only if a rule changed. Run `"${CLAUDE_PLUGIN_ROOT}/scripts/effort-log" tally` to confirm the table still parses. A new version of a model needs no table change: its rows keep their settings and evidence.
+**5. Apply.** For each row whose model or effort changes, record a baseline in the effort log, the one place settings live: `"${CLAUDE_PLUGIN_ROOT}/scripts/effort-log" baseline --row <key> --model <model> --level <level> --note "refresh-ladder: <what changed>"`. Change the ladder memory only if a rule changed. Run `"${CLAUDE_PLUGIN_ROOT}/scripts/effort-log" tally` to confirm each row shows its new setting. A new version of a model needs no baseline: its rows keep their settings and evidence.

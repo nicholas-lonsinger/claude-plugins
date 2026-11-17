@@ -319,6 +319,14 @@ adds 1 claude-opus-5-6 ver medium met
 expect "a run on 5-6 starts the failures over" ver 'streak 2 of 5 for opus low'
 adds 1 claude-opus-5-5 ver medium met
 expect "a later run on 5-5 does not bring them back" ver 'streak 3 of 5 for opus low'
+row stale yes opus medium
+base stale opus medium
+adds 5 claude-opus-5-6 stale medium met
+expect_out "five mets on 5-6 step down" '^STEP DOWN: stale opus medium → opus low' "$OUT"
+adds 1 claude-opus-5-5 stale low missed
+expect_out "a stale 5-5 session's miss is still probation" '^STEP UP: stale opus low → opus medium' "$OUT"
+adds 4 claude-opus-5-6 stale medium met
+expect "the failure is 5-5's, so 5-6 still needs 5" stale 'streak 4 of 5 for opus low'
 
 echo "H. two machines' sessions fold in time order"
 new_case machines
