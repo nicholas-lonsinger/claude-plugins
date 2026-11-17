@@ -35,13 +35,13 @@
       "name": "ui-tester",
       "description": "A shared Tester session that runs UI test plans with computer use, and the routing skill other sessions use to send it checks",
       "source": "./ui-tester",
-      "version": "1.2.2"
+      "version": "1.2.3"
     },
     {
       "name": "orchestration",
-      "description": "Subagent orchestration for Claude Code — delegate issues to subagents, log judged launches and their effort levels, calibrate the effort table from that log, refresh each row's model when new models ship, and name sessions",
+      "description": "Subagent orchestration for Claude Code — oversee an issue or task end to end with each phase delegated to a subagent, and name sessions after their issue",
       "source": "./orchestration",
-      "version": "1.1.0"
+      "version": "2.0.0"
     }
   ]
 }
