@@ -1,40 +1,67 @@
 #!/usr/bin/env python3
-"""Record judged subagent launches and tally them per task-table row.
+"""Record judged subagent launches and move each task-table row's setting on the evidence.
 
   effort-log add --row KEY --level LEVEL --outcome OUTCOME --model ID
                  (--agent ID | --workflow RUN_ID --label LABEL)
-                 [--role ROLE] [--pair ID]
-  effort-log tally [--model ID]
+                 [--role single|escalation] [--note TEXT]
+  effort-log tally
 
-Row keys and each row's model and current level are read from the task
-table in the synced user CLAUDE.md. A row's evidence is the launches on its
-model, counted per exact model id, so a new model version starts every
-row's evidence fresh. Each session appends to its own TSV in the sync
-store, so sessions and machines never write the same file.
+The task table in the synced user CLAUDE.md (| `key` | task | oracle | model
+| effort |) gives each row its oracle and its setting: a model family and an
+effort level. A row's evidence at a setting is its judged runs there (met or
+missed), across every version of the family, so a new version inherits the
+previous one's evidence and level; brief and inconclusive runs count for
+nothing. Each row's verdict is an action:
+
+- step up, back to the setting it came from, when a row stepped down misses
+  within its first STREAK runs there; or, when RAISE_AT of the last WINDOW
+  runs at its setting missed, to the setting it came from if that is above,
+  else one rung up (effort first, then the next model on the haiku < sonnet
+  < opus chain). Missing at the top of the ladder holds for refresh-ladder.
+- step down, on an oracle row only, one rung (effort first, then the model
+  below) once the streak of met runs since the row reached its setting is
+  STREAK x 2^(misses at the rung on the family's newest logged version).
+- hold otherwise. A row without an oracle moves down only by refresh-ladder.
+
+The log never moves a row onto or off fable; a fable row steps effort only.
+`add` logs a run, then rewrites the row's Model and Effort cells when the
+verdict steps. `tally` prints every row's verdict and the rows whose recent
+runs keep missing for the brief. Each session appends to its own TSV in the
+sync store, so sessions and machines never write the same file.
 """
 import argparse
 import csv
 import json
 import os
 import re
+import shutil
 import sys
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
 STORE = Path.home() / ".claude/plugins/data/claude-memory-sync-nicholas-lonsinger-plugins/user"
-LOG_DIR = Path(os.environ.get("EFFORT_LOG_DIR", STORE / "effort-log"))
-TABLE = Path(os.environ.get("EFFORT_TABLE", STORE / "CLAUDE.md"))
+LOG_DIR_SET = os.environ.get("EFFORT_LOG_DIR")
+TABLE_SET = os.environ.get("EFFORT_TABLE")
+LOG_DIR = Path(LOG_DIR_SET) if LOG_DIR_SET else STORE / "effort-log"
+TABLE = Path(TABLE_SET) if TABLE_SET else STORE / "CLAUDE.md"
 
-ROW_LEVELS = ["low", "medium", "high"]  # a row's level stays in this range
-LEVELS = ROW_LEVELS + ["xhigh"]  # xhigh is reached only by escalation
-OUTCOMES = ["met", "missed", "brief", "inconclusive"]
-ROLES = ["single", "upper", "lower", "escalation"]
-MODELS = ["haiku", "sonnet", "opus", "fable"]  # a row's Model cell; exact ids are claude-<model>-…
+LEVELS = ["low", "medium", "high", "xhigh"]  # xhigh is reached only by escalation
+ROW_LEVELS = LEVELS[:3]
+CHAIN = ["haiku", "sonnet", "opus"]  # the models a row steps along
+MODELS = CHAIN + ["fable"]  # a row's Model cell; exact ids are claude-<model>-…; fable ranks above opus
 ALIASES = set(MODELS) | {"inherit"}
+ORACLES = ["yes", "no"]
+OUTCOMES = ["met", "missed", "brief", "inconclusive"]
+JUDGED = ("met", "missed")
+ROLES = ["single", "escalation"]  # roles `add` records; legacy entries also carry upper and lower
+OFF_TENURE = ("escalation", "lower")  # side runs at another setting, never the row's own line
 
-WINDOW = 5  # most recent runs, and most recent pair comparisons, a verdict reads
-RAISE_AT = 2  # misses at the row's level within WINDOW that raise it
-DROP_AT = 4  # lower-level wins within WINDOW that drop it
+STREAK = 5  # met runs a step down needs, doubled per miss at the rung below on the current version
+WINDOW = 5  # most recent runs at a setting that a step up reads
+RAISE_AT = 2  # misses within WINDOW that step a row up
+BRIEF_SPAN = 20  # most recent entries of a row that the brief-miss check reads
+BRIEF_AT = 2  # brief misses within BRIEF_SPAN that flag a row
 
 # Recorded for later mining; no verdict reads them.
 MEASURES = [
@@ -42,11 +69,10 @@ MEASURES = [
     "input_tokens", "output_tokens", "cache_read_tokens", "cache_write_5m_tokens", "cache_write_1h_tokens",
     "model_secs", "tool_secs", "idle_secs",
 ]
-COLUMNS = ["time", "model", "row", "level", "role", "pair", "outcome"] + MEASURES
+COLUMNS = ["time", "model", "row", "level", "role", "outcome", "note"] + MEASURES
 PROJECTS = Path.home() / ".claude/projects"
-ROW_RE = re.compile(r"^\|\s*`([a-z0-9-]+)`\s*\|.*\|([^|]*)\|([^|]*)\|\s*$")
-# The Effort cell is a level, optionally ", unpaired": the tally never asks to pair that row.
-EFFORT_RE = re.compile(r"^(low|medium|high)(, unpaired)?$")
+ROW_RE = re.compile(
+    r"^\|\s*`(?P<key>[a-z0-9-]+)`\s*\|.*\|(?P<oracle>[^|]*)\|(?P<model>[^|]*)\|(?P<effort>[^|]*)\|\s*$")
 
 
 def family(model_id):
@@ -55,42 +81,104 @@ def family(model_id):
     return parts[1] if len(parts) > 1 and parts[0] == "claude" else None
 
 
+def name(setting):
+    return f"{setting[0]} {setting[1]}"
+
+
 def fail(message):
     print(f"effort-log: {message}", file=sys.stderr)
     sys.exit(2)
 
 
 def read_table():
+    """Each row's oracle (bool) and setting (family, level), keyed by row."""
     try:
-        lines = TABLE.read_text().splitlines()
+        lines = TABLE.read_text(encoding="utf-8").splitlines()
     except OSError as error:
         fail(f"cannot read the task table in {TABLE}: {error}")
     table = {}
     for line in lines:
         match = ROW_RE.match(line)
-        if match:
-            model = match.group(2).strip()
-            if model not in MODELS:
-                fail(f"row `{match.group(1)}` in {TABLE}: Model cell {model!r} is not one of {', '.join(MODELS)}")
-            effort = EFFORT_RE.match(match.group(3).strip())
-            if not effort:
-                fail(f"row `{match.group(1)}` in {TABLE}: Effort cell {match.group(3).strip()!r} "
-                     "is not low, medium, or high, optionally followed by ', unpaired'")
-            table[match.group(1)] = (model, effort.group(1), effort.group(2) is not None)
+        if not match:
+            continue
+        key = match.group("key")
+        cells = {cell: match.group(cell).strip() for cell in ("oracle", "model", "effort")}
+        for cell, allowed in (("oracle", ORACLES), ("model", MODELS), ("effort", ROW_LEVELS)):
+            if cells[cell] not in allowed:
+                fail(f"row `{key}` in {TABLE}: {cell.capitalize()} cell {cells[cell]!r} "
+                     f"is not one of {', '.join(allowed)}")
+        if key in table:
+            fail(f"row `{key}` appears more than once in {TABLE}")
+        table[key] = {"oracle": cells["oracle"] == "yes", "setting": (cells["model"], cells["effort"])}
     if not table:
-        fail(f"no task-table rows (| `key` | task | model | effort |) found in {TABLE}")
+        fail(f"no task-table rows (| `key` | task | oracle | model | effort |) found in {TABLE}")
     return table
+
+
+def recell(cell, value):
+    """`cell` with its content replaced by `value`, its padding kept."""
+    return cell[:len(cell) - len(cell.lstrip())] + value + cell[len(cell.rstrip()):]
+
+
+def write_atomically(target, text):
+    """Replace `target` with `text` through a temp file beside it, keeping its mode."""
+    fd, temp = tempfile.mkstemp(dir=target.parent, prefix=f".{target.name}.")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="") as handle:
+            handle.write(text)
+        shutil.copymode(target, temp)
+        os.replace(temp, target)
+    except BaseException:
+        os.unlink(temp)
+        raise
+
+
+def rewrite_row(row, setting):
+    """Set `row`'s Model and Effort cells in the table to `setting`; every other byte stays."""
+    target = TABLE.resolve()
+    with target.open(encoding="utf-8", newline="") as handle:
+        lines = handle.read().splitlines(keepends=True)
+    for index, line in enumerate(lines):
+        body = line.rstrip("\r\n")
+        match = ROW_RE.match(body)
+        if match and match.group("key") == row:
+            body = (body[:match.start("model")] + recell(match.group("model"), setting[0]) + "|"
+                    + recell(match.group("effort"), setting[1]) + body[match.end("effort"):])
+            lines[index] = body + line[len(line.rstrip("\r\n")):]
+    write_atomically(target, "".join(lines))
 
 
 def read_log():
     entries = []
     for path in sorted(LOG_DIR.glob("*.tsv")):
-        with path.open(newline="") as handle:
+        with path.open(encoding="utf-8", newline="") as handle:
             for entry in csv.DictReader(handle, delimiter="\t"):
                 entry["session"] = path.stem
+                entry["role"] = entry.get("role") or "single"
+                entry["note"] = entry.get("note") or ""
                 entries.append(entry)
     entries.sort(key=lambda entry: entry["time"])
     return entries
+
+
+def append_entry(path, values):
+    """Append one entry to a session's TSV, first moving a file with older columns onto COLUMNS."""
+    header = None
+    if path.exists():
+        with path.open(encoding="utf-8", newline="") as handle:
+            reader = csv.DictReader(handle, delimiter="\t")
+            rows = list(reader)
+            header = reader.fieldnames
+    if header and header[:len(COLUMNS)] != COLUMNS:
+        header = COLUMNS + [column for column in header if column not in COLUMNS]
+        lines = [header] + [[row.get(column) or "" for column in header] for row in rows]
+        write_atomically(path, "".join("\t".join(line) + "\n" for line in lines))
+    with path.open("a", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=header or COLUMNS, delimiter="\t",
+                                lineterminator="\n", restval="")
+        if not header:
+            writer.writeheader()
+        writer.writerow(values)
 
 
 def workflow_agent(session, run_id, label):
@@ -180,77 +268,107 @@ def measure_agent(session, agent_id, model):
     }
 
 
-def level_below(level):
-    index = ROW_LEVELS.index(level)
-    return ROW_LEVELS[index - 1] if index > 0 else None
+def setting_of(entry):
+    return (family(entry["model"]), entry["level"])
 
 
-def level_above(level):
-    index = ROW_LEVELS.index(level)
-    return ROW_LEVELS[index + 1] if index + 1 < len(ROW_LEVELS) else None
+def above(x, s):
+    """Whether setting x is above setting s: no lower a model (fable ranks top) and no lower a level."""
+    return (x != s and MODELS.index(x[0]) >= MODELS.index(s[0])
+            and LEVELS.index(x[1]) >= LEVELS.index(s[1]))
 
 
-def evaluate(entries, row, level, model, pairable=True):
-    mine = [e for e in entries if e["row"] == row and e["model"] == model]
+def steppable(s, t):
+    """Whether the log may move a row from setting s to t: a row level, and never onto or off fable."""
+    return t[1] in ROW_LEVELS and (t[0] == "fable") == (s[0] == "fable")
 
-    runs = [
-        e for e in mine
-        if e["role"] in ("single", "upper") and e["level"] == level and e["outcome"] in ("met", "missed")
-    ][-WINDOW:]
-    misses = sum(e["outcome"] == "missed" for e in runs)
 
-    below = level_below(level)
-    pairs = {}
-    for e in mine:
-        if e["role"] in ("upper", "lower"):
-            pairs.setdefault((e["session"], e["pair"]), {})[e["role"]] = e
-    comparisons = []
-    for pair in pairs.values():
-        upper, lower = pair.get("upper"), pair.get("lower")
-        if not upper or not lower or upper["level"] != level or lower["level"] != below:
-            continue
-        if {upper["outcome"], lower["outcome"]} & {"brief", "inconclusive"}:
-            continue
-        comparisons.append(lower["outcome"] == "met")
-    comparisons = comparisons[-WINDOW:]
-    wins = sum(comparisons)
+def rung_up(setting):
+    model, level = setting
+    if level != ROW_LEVELS[-1]:
+        return (model, ROW_LEVELS[ROW_LEVELS.index(level) + 1])
+    if model in CHAIN[:-1]:
+        return (CHAIN[CHAIN.index(model) + 1], level)
+    return None
 
-    if misses >= RAISE_AT and level_above(level):
-        verdict = "raise"
-        reason = f"{misses} of the last {len(runs)} runs at {level} missed"
-    elif below and wins >= DROP_AT:
-        verdict = "drop"
-        reason = f"{below} met Done in {wins} of the last {len(comparisons)} pairs"
-    elif below and pairable and len(comparisons) < WINDOW:
-        verdict = "probe"
-        reason = f"{len(comparisons)} of {WINDOW} pair comparisons against {below}"
-    else:
-        verdict = "hold"
-        reason = ""
 
-    return {
-        "verdict": verdict,
-        "reason": reason,
-        "runs": len(runs),
-        "misses": misses,
-        "pairs": len(comparisons),
-        "wins": wins,
-        "briefs": sum(e["outcome"] == "brief" for e in mine),
-    }
+def rungs_down(setting):
+    """The settings a step down may take, nearest first: effort down, then the model below."""
+    model, level = setting
+    rungs = []
+    if level != ROW_LEVELS[0]:
+        rungs.append((model, ROW_LEVELS[ROW_LEVELS.index(level) - 1]))
+    if model in CHAIN[1:]:
+        rungs.append((CHAIN[CHAIN.index(model) - 1], level))
+    return rungs
+
+
+def evaluate(entries, row, setting, oracle):
+    """The row's verdict (hold, step down, step up), its target setting, the reason, and the counts behind it."""
+    current = {}  # family → the model id of its newest entry anywhere in the log
+    for entry in entries:
+        current[family(entry["model"])] = entry["model"]
+    judged = [
+        e for e in entries
+        if e["row"] == row and e["outcome"] in JUDGED and family(e["model"]) in MODELS and e["level"] in LEVELS
+    ]
+
+    # The tenure: the row's own runs since it reached this setting.
+    line = [e for e in judged if e["role"] not in OFF_TENURE]
+    start = len(line)
+    while start and setting_of(line[start - 1]) == setting:
+        start -= 1
+    tenure = line[start:]
+    prev = setting_of(line[start - 1]) if start else None
+    streak = 0
+    for entry in reversed(tenure):
+        if entry["outcome"] != "met":
+            break
+        streak += 1
+    window = [e for e in judged if setting_of(e) == setting][-WINDOW:]
+    misses = sum(e["outcome"] == "missed" for e in window)
+    counts = {"tenure": len(tenure), "streak": streak, "misses": misses, "window": len(window)}
+
+    def verdict(action, target, reason):
+        return {"verdict": action, "target": target, "reason": reason, **counts}
+
+    back_up = prev is not None and above(prev, setting) and steppable(setting, prev)
+    if back_up and any(e["outcome"] == "missed" for e in tenure[:STREAK]):
+        return verdict("step up", prev, f"a miss within the first {STREAK} runs at {name(setting)}, "
+                                        f"stepped down from {name(prev)}")
+    if misses >= RAISE_AT:
+        why = f"{misses} of the last {len(window)} runs at {name(setting)} missed"
+        target = prev if back_up else rung_up(setting)
+        if target is None:
+            return verdict("hold", None, f"{why}, at the top of the ladder: refresh-ladder decides")
+        return verdict("step up", target, why)
+    if not oracle:
+        return verdict("hold", None, "no oracle: refresh-ladder sets it")
+    rungs = rungs_down(setting)
+    if not rungs:
+        return verdict("hold", None, f"streak {streak}, at the floor: no lower setting")
+    needs = []
+    for rung in rungs:
+        misses_now = sum(
+            e["outcome"] == "missed" and e["model"] == current.get(rung[0])
+            for e in judged if setting_of(e) == rung
+        )
+        need = STREAK * 2 ** misses_now
+        if streak >= need:
+            return verdict("step down", rung, f"streak {streak} of {need} for {name(rung)}")
+        needs.append(need)
+    return verdict("hold", None, f"streak {streak} of {needs[0]} for {name(rungs[0])}")
 
 
 def command_add(args):
     table = read_table()
     if args.row not in table:
         fail(f"unknown row '{args.row}'; add it to the task table first. Rows: {', '.join(table)}")
-    if args.model.lower() in ALIASES or not args.model.startswith("claude-"):
-        fail(f"--model takes the exact model id (claude-…), not '{args.model}'")
-    row_model = table[args.row][0]
-    if family(args.model) != row_model:
-        fail(f"row '{args.row}' runs on {row_model}, so a run on {args.model} is not its evidence; "
-             "a launch and its escalation stay on the row's model")
-    if (args.role in ("upper", "lower")) != bool(args.pair):
-        fail("--pair is required for --role upper/lower and only for them")
+    if args.model.lower() in ALIASES or family(args.model) not in MODELS:
+        fail(f"--model takes the exact model id (claude-<{'|'.join(MODELS)}>-…), not '{args.model}'")
+    note = " ".join((args.note or "").split())
+    if args.outcome == "brief" and not note:
+        fail("--outcome brief takes --note: what the brief lacked")
     session = os.environ.get("CLAUDE_CODE_SESSION_ID")
     if not session:
         fail("CLAUDE_CODE_SESSION_ID is not set; run this from a Claude Code session")
@@ -262,78 +380,71 @@ def command_add(args):
     measured = measure_agent(session, agent_id, args.model)
 
     LOG_DIR.mkdir(parents=True, exist_ok=True)
-    path = LOG_DIR / f"{session}.tsv"
-    new_file = not path.exists()
-    with path.open("a", newline="") as handle:
-        writer = csv.writer(handle, delimiter="\t", lineterminator="\n")
-        if new_file:
-            writer.writerow(COLUMNS)
-        writer.writerow([
-            datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-            args.model, args.row, args.level, args.role, args.pair or "",
-            args.outcome, *(measured[m] for m in MEASURES),
-        ])
-
-    _, level, unpaired = table[args.row]
-    result = evaluate(read_log(), args.row, level, args.model, not unpaired)
+    append_entry(LOG_DIR / f"{session}.tsv", {
+        "time": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "model": args.model, "row": args.row, "level": args.level, "role": args.role,
+        "outcome": args.outcome, "note": note, **measured,
+    })
     print(f"logged {args.row} {args.level} {args.role} {args.outcome}: {measured['requests']} requests, "
           f"{measured['model_secs']}s model, {measured['tool_secs']}s tools, {measured['idle_secs']}s idle")
-    if result["verdict"] == "raise":
-        target = level_above(level)
-    elif result["verdict"] == "drop":
-        target = level_below(level)
-    else:
+
+    spec = table[args.row]
+    result = evaluate(read_log(), args.row, spec["setting"], spec["oracle"])
+    if result["verdict"] == "hold":
         return
-    print(f"LEVEL CHANGE: {args.row} {level} → {target} ({result['reason']}). "
-          f"Set that row's Effort cell to {target} in {TABLE}.")
+    rewrite_row(args.row, result["target"])
+    print(f"{result['verdict'].upper()}: {args.row} {name(spec['setting'])} → {name(result['target'])} "
+          f"({result['reason']}); the table now says so.")
 
 
 def command_tally(args):
     table = read_table()
     entries = read_log()
-    if args.model and not family(args.model):
-        fail(f"--model takes the exact model id (claude-…), not '{args.model}'")
-    print(f"{'row':<17}{'model':<20}{'level':<8}{'runs':>6}{'miss':>6}{'pairs':>7}{'won':>5}{'brief':>7}  verdict")
-    for row, (row_model, level, unpaired) in table.items():
-        if args.model and family(args.model) == row_model:
-            model = args.model
-        else:
-            logged = [e["model"] for e in entries if e["row"] == row and family(e["model"]) == row_model]
-            model = logged[-1] if logged else None
-        if not model:
-            print(f"{row:<17}{row_model:<20}{level:<8}  nothing logged on {row_model} yet")
+    width = max(len("row"), *map(len, table)) + 2
+    print(f"{'row':<{width}}{'oracle':<8}{'setting':<15}{'tenure':>7}{'streak':>8}{'misses':>8}  verdict")
+    for row, spec in table.items():
+        r = evaluate(entries, row, spec["setting"], spec["oracle"])
+        action = r["verdict"] + (f" → {name(r['target'])}" if r["target"] else "")
+        misses = f"{r['misses']}/{r['window']}"
+        print(f"{row:<{width}}{'yes' if spec['oracle'] else 'no':<8}{name(spec['setting']):<15}"
+              f"{r['tenure']:>7}{r['streak']:>8}{misses:>8}  {action} ({r['reason']})")
+
+    for row in table:
+        recent = [e for e in entries if e["row"] == row][-BRIEF_SPAN:]
+        briefs = [e for e in recent if e["outcome"] == "brief"]
+        if len(briefs) < BRIEF_AT:
             continue
-        r = evaluate(entries, row, level, model, not unpaired)
-        detail = f" — {r['reason']}" if r["reason"] else ""
-        print(f"{row:<17}{model:<20}{level:<8}{r['runs']:>6}{r['misses']:>6}{r['pairs']:>7}{r['wins']:>5}"
-              f"{r['briefs']:>7}  {r['verdict']}{detail}")
+        print(f"brief misses: {row} {len(briefs)} of the last {len(recent)} runs")
+        for entry in briefs:
+            if entry["note"]:
+                print(f"  {row}: {entry['note']}")
+
     orphans = sorted({e["row"] for e in entries} - set(table))
     if orphans:
         print(f"logged rows no longer in the table: {', '.join(orphans)}")
 
 
 def main():
-    if not STORE.is_dir():
+    if not (LOG_DIR_SET and TABLE_SET) and not STORE.is_dir():
         fail(f"the orchestration plugin's effort log needs the claude-memory-sync plugin installed ({STORE} is missing); run /claude-memory-sync:install")
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     commands = parser.add_subparsers(dest="command", required=True)
 
-    add = commands.add_parser("add", help="record one judged launch")
+    add = commands.add_parser("add", help="record one judged launch, and step its row when the evidence says so")
     add.add_argument("--row", required=True, help="task-table row key")
     add.add_argument("--level", required=True, choices=LEVELS, help="effort the run used")
     add.add_argument("--outcome", required=True, choices=OUTCOMES)
     add.add_argument("--model", required=True, help="exact model id the subagent ran on")
-    add.add_argument("--role", default="single", choices=ROLES)
-    add.add_argument("--pair", help="id shared by a pair's upper and lower runs")
+    add.add_argument("--role", default="single", choices=ROLES,
+                     help="escalation for the rerun a level up after a miss")
+    add.add_argument("--note", help="what the brief lacked (required with --outcome brief)")
     launch = add.add_mutually_exclusive_group(required=True)
     launch.add_argument("--agent", help="the agentId an Agent launch returned; its transcript supplies the recorded measures")
     launch.add_argument("--workflow", help="the Run ID of the Workflow whose agent() this was; pair with --label")
     add.add_argument("--label", help="the label the Workflow script gave that agent()")
     add.set_defaults(handler=command_add)
 
-    tally = commands.add_parser("tally", help="per-row evidence and verdicts")
-    tally.add_argument("--model", help="exact model id to tally the rows on its model with "
-                                        "(default: each row's newest logged id on its model)")
+    tally = commands.add_parser("tally", help="every row's verdict, and rows with recurring brief misses")
     tally.set_defaults(handler=command_tally)
 
     args = parser.parse_args()
