@@ -16,8 +16,12 @@ pass() { PASS=$((PASS + 1)); }
 fail() { FAIL=$((FAIL + 1)); printf '  %s✗%s %s\n' "$c_red" "$c_reset" "$1"; }
 
 # git reports worktree paths resolved, so resolve the fixture root the same way
-# (on macOS mktemp answers under /var, a symlink to /private/var).
-tmp="$(cd "$(mktemp -d)" && pwd -P)"
+# (macOS's $TMPDIR lives behind /private). The trap deletes $tmp, so the run
+# stops unless $tmp is the directory mktemp just made: an empty mktemp answer
+# would make `cd ""` resolve the working directory instead.
+if ! tmp="$(mktemp -d "${TMPDIR:-/tmp}/freshen-main-test.XXXXXX")" || ! tmp="$(cd "$tmp" && pwd -P)"; then
+    echo "FAIL: cannot create a scratch directory"; exit 1
+fi
 trap 'rm -rf "$tmp"' EXIT
 
 # Pin everything git reads from the environment, so the run reports on the
