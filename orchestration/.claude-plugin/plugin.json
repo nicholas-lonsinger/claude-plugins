@@ -1,7 +1,7 @@
 {
   "name": "orchestration",
-  "version": "1.1.0",
-  "description": "Subagent orchestration for Claude Code — delegate issues to subagents, log judged launches and their effort levels, calibrate the effort table from that log, refresh each row's model when new models ship, and name sessions",
+  "version": "2.0.0",
+  "description": "Subagent orchestration for Claude Code — oversee an issue or task end to end with each phase delegated to a subagent, and name sessions after their issue",
   "author": {
     "name": "Nicholas Lonsinger",
     "url": "https://github.com/nicholas-lonsinger"
@@ -11,11 +11,7 @@
   "keywords": [
     "subagents",
     "orchestration",
-    "effort",
     "oversee",
-    "calibrate",
-    "effort-log",
-    "refresh-ladder",
     "name-session"
   ],
   "skills": "./skills/"
