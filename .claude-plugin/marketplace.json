@@ -41,7 +41,7 @@
       "name": "orchestration",
       "description": "Subagent orchestration for Claude Code — oversee an issue or task end to end with each phase delegated to a subagent, and name sessions after their issue",
       "source": "./orchestration",
-      "version": "2.0.0"
+      "version": "2.0.1"
     }
   ]
 }
