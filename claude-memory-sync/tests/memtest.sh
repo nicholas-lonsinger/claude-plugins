@@ -27,13 +27,15 @@ CHECK="$SCRIPTS/install-check.sh"
 # against `pwd -P` output — resolving here keeps both spellings identical.
 # ${TMPDIR:-/tmp} (not a hardcoded /private/tmp) keeps the harness runnable
 # on Linux CI.
+# The harness deletes under these directories, so a failed mktemp must stop
+# the run: an empty answer would make `cd ""` resolve the working directory.
 scratch_dir() {
   local d
-  d="$(mktemp -d "${TMPDIR:-/tmp}/$1.XXXXXX")"
+  d="$(mktemp -d "${TMPDIR:-/tmp}/$1.XXXXXX")" || return 1
   (cd "$d" && pwd -P)
 }
 
-SCRATCH="$(scratch_dir memsync-test)"
+SCRATCH="$(scratch_dir memsync-test)" || { echo "FAIL: cannot create a scratch directory"; exit 1; }
 STORE="$SCRATCH/.claude-memory-sync"
 PROJECTS="$SCRATCH/.claude/projects"
 DATA="$SCRATCH/.claude/plugins/data/claude-memory-sync-nicholas-lonsinger-plugins"
@@ -203,7 +205,7 @@ assert "store dir exists for stdin project" test -d "$STORE/memory/$P3SLUG"
 
 # ---------- 11: new-machine simulation ----------
 echo "== 11: new machine =="
-SCRATCH2="$(scratch_dir memsync-test2)"
+SCRATCH2="$(scratch_dir memsync-test2)" || { echo "FAIL: cannot create a scratch directory"; exit 1; }
 cp "$SCRATCH/.gitconfig" "$SCRATCH2/.gitconfig"
 DATA2="$SCRATCH2/.claude/plugins/data/claude-memory-sync-nicholas-lonsinger-plugins"
 mkdir -p "$SCRATCH2/.claude/projects" "$DATA2"
@@ -241,7 +243,7 @@ assert "no output for healthy linked project" test -z "$OUT"
 # an arbitrary path named by $DATA/state-dir, and the default
 # ~/.claude-memory-sync is never created or consulted.
 echo "== 14: custom store path =="
-SCRATCH3="$(scratch_dir memsync-test3)"
+SCRATCH3="$(scratch_dir memsync-test3)" || { echo "FAIL: cannot create a scratch directory"; exit 1; }
 cp "$SCRATCH/.gitconfig" "$SCRATCH3/.gitconfig"
 DATA3="$SCRATCH3/.claude/plugins/data/claude-memory-sync-nicholas-lonsinger-plugins"
 CUSTOM_STORE="$SCRATCH3/xdg/memstore"   # deliberately not ~/.claude-memory-sync

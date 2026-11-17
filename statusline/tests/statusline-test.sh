@@ -19,7 +19,12 @@ command -v jq >/dev/null 2>&1 || { echo "FAIL: jq is required to run this harnes
 
 # mktemp + symlink-resolve: macOS's /tmp and $TMPDIR live behind /private, and
 # the git assertions compare rendered basenames against $SCRATCH-built paths.
-SCRATCH="$(cd "$(mktemp -d "${TMPDIR:-/tmp}/statusline-test.XXXXXX")" && pwd -P)"
+# Cleanup deletes $SCRATCH, so the run stops unless it is the directory mktemp
+# just made: an empty mktemp answer would make `cd ""` resolve the working
+# directory instead.
+if ! SCRATCH="$(mktemp -d "${TMPDIR:-/tmp}/statusline-test.XXXXXX")" || ! SCRATCH="$(cd "$SCRATCH" && pwd -P)"; then
+  echo "FAIL: cannot create a scratch directory"; exit 1
+fi
 SESSIONS=()
 cleanup() {
   local s
