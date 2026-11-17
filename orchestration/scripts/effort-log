@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Record judged subagent launches, and fold the log into each task-table row's setting.
+"""Record judged subagent launches, and derive each task-table row's setting from the log.
 
   effort-log add --row KEY --level LEVEL --outcome OUTCOME --model ID
                  (--agent ID | --workflow RUN_ID --label LABEL)
@@ -12,36 +12,38 @@
 Each session appends to its own TSV in the sync store, so sessions and
 machines never write the same file. A log entry is a run (a judged launch on
 an exact model id) or a baseline (a row's setting, a model family and an
-effort level, as refresh-ladder or the user sets it). A row's current setting
-is a fold over every session's entries in time order; the script never
-writes the task table, which supplies only each row's key and Oracle (and,
-for `baseline --from-table`, its Model and Effort cells).
+effort level, as refresh-ladder or the user sets it). The script never writes
+the task table, which supplies only each row's key and Oracle (and, for
+`baseline --from-table`, its Model and Effort cells).
 
-A baseline sets the row's setting. `fresh` starts its tenure empty; `carry`
-seeds it with the row's trailing runs at that setting. A run at the row's
-setting joins the tenure and the row is judged:
+A row's setting is computed afresh on every read from the set of its entries,
+never from their order of arrival:
 
-- step up, back to the setting it came from, when a row stepped down misses
-  within its first STREAK runs there; or, when RAISE_AT of the last WINDOW
-  runs of its tenure missed, one rung up: effort first, then the next model
-  on the haiku < sonnet < opus chain. Missing at the top of its ladder holds
-  for refresh-ladder.
-- step down, on an oracle row only, to the first of effort down or the
-  model below whose need the streak of met runs reaches: STREAK x 2^(the
-  failures at that setting or any setting above it on each family's
-  highest version, a failure being a step up out of a setting or a legacy
-  lower run's miss there), so a failed setting bounds every setting it
-  dominates and a new version starts its failures over.
-- hold otherwise. A row without an oracle moves down only by baseline.
+- Evidence. The row's latest baseline B starts it. A `fresh` baseline's
+  evidence is the row's runs stamped after it; a `carry` baseline's is all of
+  the row's runs. Every met or missed run counts at the setting it ran at
+  (its model's family and its level), whatever its role or version.
+- Up. From B, while the setting is failing (RAISE_AT misses among its last
+  WINDOW runs, the latest a miss), move one rung up: effort first, then the
+  next model on the haiku < sonnet < opus chain. Failing at the top of the
+  ladder holds for refresh-ladder.
+- Down, on an oracle row only. Move to the first of effort down or the model
+  below, C, whose need the streak reaches, and repeat from there. The streak
+  is the met runs at the current setting S after the latest miss at S or at
+  any setting that dominates C but not S; the need is STREAK x 2^(the misses
+  at those settings). A failed setting so bounds every setting it dominates,
+  and each retry of it waits for twice the streak, counted afresh.
 
-A run at another setting (a session that started before the row moved) is
-evidence only. The log never moves a row onto or off fable. `brief` and
-`inconclusive` runs move nothing; recurring brief misses are flagged by
-`tally`. `settings` prints every row's current setting for a SessionStart
-hook, and prints nothing when it cannot.
+The log never moves a row onto or off fable. `brief` and `inconclusive` runs
+and xhigh runs move nothing; recurring brief misses are flagged by `tally`. A
+log line that is not UTF-8, does not parse against its file's header, or has
+a time that does not parse is skipped and reported by every command.
+`settings` prints every row's setting for a SessionStart hook, or what keeps
+it from doing so and what fixes it.
 """
 import argparse
 import csv
+import io
 import json
 import os
 import shutil
@@ -61,6 +63,7 @@ LEVELS = ["low", "medium", "high", "xhigh"]  # xhigh is reached only by escalati
 ROW_LEVELS = LEVELS[:3]
 CHAIN = ["haiku", "sonnet", "opus"]  # the models a row steps along
 MODELS = CHAIN + ["fable"]  # model families, in rank order; exact ids are claude-<family>-<version…>
+SETTINGS = [(model, level) for model in MODELS for level in ROW_LEVELS]
 ALIASES = set(MODELS) | {"inherit"}
 ORACLES = ["yes", "no"]
 OUTCOMES = ["met", "missed", "brief", "inconclusive"]
@@ -69,11 +72,16 @@ ROLES = ["single", "escalation"]  # roles `add` records; legacy entries also car
 BASELINE_ROLES = ["fresh", "carry"]
 UNPAIRED = ", unpaired"  # an Effort-cell suffix that names no level
 
-STREAK = 5  # met runs a step down needs, doubled per step up out of the target or a setting above it
-WINDOW = 5  # most recent tenure runs that a step up reads
-RAISE_AT = 2  # misses within WINDOW that step a row up
+STREAK = 5  # met runs a step down needs, doubled per miss at the target or a setting that bears on it
+WINDOW = 5  # most recent runs at a setting that the failing check reads
+RAISE_AT = 2  # misses within WINDOW that make a setting failing
 BRIEF_SPAN = 20  # most recent runs of a row that the brief-miss check reads
 BRIEF_AT = 2  # brief misses within BRIEF_SPAN that flag a row
+
+TOP = "misses at the top of its ladder: refresh-ladder sets it"
+NO_ORACLE = "no oracle: refresh-ladder sets it"
+FLOOR = "at the floor"
+NO_BASELINE = "no row has a baseline yet: run effort-log baseline --from-table"
 
 # Recorded for later mining; no verdict reads them.
 MEASURES = [
@@ -83,18 +91,12 @@ MEASURES = [
 ]
 COLUMNS = ["time", "kind", "model", "row", "level", "role", "outcome", "note"] + MEASURES
 PROJECTS = Path.home() / ".claude/projects"
-EPOCH = datetime.min.replace(tzinfo=timezone.utc)
 
 
 def family(model_id):
     """The family an exact id belongs to: claude-opus-5-5 → opus."""
     parts = model_id.split("-")
     return parts[1] if len(parts) > 1 and parts[0] == "claude" else None
-
-
-def version(model_id):
-    """The integer parts after the family: claude-opus-5-5 → (5, 5)."""
-    return tuple(int(part) for part in model_id.split("-")[2:] if part.isdigit())
 
 
 def name(setting):
@@ -109,6 +111,15 @@ def fail(message):
     raise Refusal(message)
 
 
+def store_missing():
+    """Whether the sync store the default paths live in is missing (tests and tools set both paths instead)."""
+    return not (LOG_DIR_SET and TABLE_SET) and not STORE.is_dir()
+
+
+STORE_MISSING = (f"the orchestration plugin's effort log needs the claude-memory-sync plugin installed "
+                 f"({STORE} is missing); run /claude-memory-sync:install")
+
+
 def cells_of(line):
     """The cells of a markdown table line, stripped, or None for a line that is not one."""
     line = line.strip()
@@ -117,11 +128,15 @@ def cells_of(line):
     return [cell.strip() for cell in line[1:-1].split("|")]
 
 
+def is_key(cell):
+    return len(cell) > 2 and cell[0] == cell[-1] == "`"
+
+
 def read_table():
     """The task table's rows, in order: key → {oracle, model, effort} (model and effort None without the column)."""
     try:
         lines = TABLE.read_text(encoding="utf-8").splitlines()
-    except OSError as error:
+    except (OSError, UnicodeDecodeError) as error:
         fail(f"cannot read the task table in {TABLE}: {error}")
     columns = None
     table = {}
@@ -134,11 +149,13 @@ def read_table():
         if cells is None:
             break  # the table ends at its first non-table line
         if len(cells) != len(columns):
-            fail(f"a task-table line in {TABLE} has {len(cells)} cells where its header has "
-                 f"{len(columns)}: {line.strip()}")
+            at = columns.index("Row")
+            named = f"row {cells[at]}" if at < len(cells) and is_key(cells[at]) else "a task-table line"
+            fail(f"{named} in {TABLE} has {len(cells)} cells where its header has {len(columns)} "
+                 f"(a | inside a cell splits it): {line.strip()}")
         row = dict(zip(columns, cells))
         key = row["Row"]
-        if not (len(key) > 2 and key[0] == key[-1] == "`"):
+        if not is_key(key):
             continue  # the separator line, or a row without a key
         key = key[1:-1]
         if row["Oracle"] not in ORACLES:
@@ -153,12 +170,12 @@ def read_table():
     return table
 
 
-def write_atomically(target, text):
-    """Replace `target` with `text` through a temp file beside it, keeping its mode."""
+def write_atomically(target, data):
+    """Replace `target` with the bytes `data` through a temp file beside it, keeping its mode."""
     fd, temp = tempfile.mkstemp(dir=target.parent, prefix=f".{target.name}.")
     try:
-        with os.fdopen(fd, "w", encoding="utf-8", newline="") as handle:
-            handle.write(text)
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(data)
         shutil.copymode(target, temp)
         os.replace(temp, target)
     except BaseException:
@@ -166,54 +183,125 @@ def write_atomically(target, text):
         raise
 
 
-def when(entry):
-    """An entry's time; one that does not parse sorts first."""
+def parse_time(text):
+    """An entry's time as an aware datetime, or None when it does not parse."""
     try:
-        moment = datetime.fromisoformat((entry.get("time") or "").replace("Z", "+00:00"))
+        moment = datetime.fromisoformat(text.replace("Z", "+00:00"))
     except ValueError:
-        return EPOCH
+        return None
     return moment if moment.tzinfo else moment.replace(tzinfo=timezone.utc)
 
 
+def split_lines(data):
+    """A file's lines as (number, bytes), without their line endings; a final empty line is no line."""
+    lines = data.split(b"\n")
+    if lines and lines[-1] == b"":
+        lines.pop()
+    return [(number, line[:-1] if line.endswith(b"\r") else line) for number, line in enumerate(lines, 1)]
+
+
+def parse_line(raw, header):
+    """One body line as a dict over `header`, or (None, why it does not parse)."""
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        return None, "not UTF-8"
+    try:
+        fields = next(csv.reader([text], delimiter="\t"))
+    except (csv.Error, StopIteration) as error:
+        return None, f"not TSV: {error}"
+    if len(fields) != len(header):
+        return None, f"{len(fields)} fields where its header has {len(header)}"
+    return dict(zip(header, fields)), None
+
+
+def parse_header(raw):
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        return None
+    return text.split("\t") if text else None
+
+
 def read_log():
-    """Every session's entries, merged in time order; each keyed by (session, line) as `key`."""
-    entries = []
-    for path in sorted(LOG_DIR.glob("*.tsv")):
-        with path.open(encoding="utf-8", newline="") as handle:
-            for index, entry in enumerate(csv.DictReader(handle, delimiter="\t")):
-                entry["key"] = (path.stem, index)
-                for column in COLUMNS:
-                    entry[column] = entry.get(column) or ""
-                entry["kind"] = entry["kind"] or "run"  # files from before baselines hold runs only
-                entry["role"] = entry["role"] or "single"
-                entries.append(entry)
-    entries.sort(key=when)
-    return entries
+    """Every session's entries in a content order no file name or arrival affects, and the lines skipped.
+
+    An entry carries its parsed time as `at`. A skipped line is (file, line number, why).
+    """
+    entries, skipped = [], []
+    paths = sorted(LOG_DIR.glob("*.tsv")) if LOG_DIR.is_dir() else []
+    for path in paths:
+        try:
+            lines = split_lines(path.read_bytes())
+        except OSError as error:
+            skipped.append((path.name, 0, f"cannot read the file: {error.strerror}"))
+            continue
+        if not lines:
+            continue
+        header = parse_header(lines[0][1])
+        if header is None:
+            skipped.append((path.name, 1, f"no readable header, so its {len(lines) - 1} entries are skipped"))
+            continue
+        for number, raw in lines[1:]:
+            if not raw:
+                continue
+            entry, why = parse_line(raw, header)
+            if entry is None:
+                skipped.append((path.name, number, why))
+                continue
+            for column in COLUMNS:
+                entry[column] = entry.get(column) or ""
+            entry["at"] = parse_time(entry["time"])
+            if entry["at"] is None:
+                skipped.append((path.name, number, f"time {entry['time']!r} does not parse"))
+                continue
+            entry["kind"] = entry["kind"] or "run"  # files from before baselines hold runs only
+            entry["role"] = entry["role"] or "single"
+            entries.append(entry)
+    entries.sort(key=lambda e: (e["at"], e["kind"], e["row"], e["model"], e["level"], e["role"],
+                                e["outcome"], e["note"], e["agent"]))
+    return entries, skipped
+
+
+def skipped_text(skipped):
+    """One line naming every skipped log line, or None."""
+    if not skipped:
+        return None
+    count = len(skipped)
+    where = "; ".join(f"{file}:{number} ({why})" if number else f"{file} ({why})" for file, number, why in skipped)
+    return f"skipped {count} log line{'s' if count != 1 else ''} that do{'es' if count == 1 else ''} not parse: {where}"
+
+
+def tsv_line(fields):
+    buffer = io.StringIO()
+    csv.writer(buffer, delimiter="\t", lineterminator="\n").writerow(fields)
+    return buffer.getvalue().encode("utf-8")
 
 
 def append_entry(path, values):
     """Append one entry to a session's TSV, first moving a file with older columns onto COLUMNS.
 
-    Returns the entry's key, as read_log gives it.
+    A line the move cannot parse is kept as it is, so it stays skipped rather than lost.
     """
-    header = None
-    rows = []
-    if path.exists():
-        with path.open(encoding="utf-8", newline="") as handle:
-            reader = csv.DictReader(handle, delimiter="\t")
-            rows = list(reader)
-            header = reader.fieldnames
+    data = path.read_bytes() if path.exists() else b""
+    lines = split_lines(data)
+    header = parse_header(lines[0][1]) if lines else None
+    if lines and header is None:
+        fail(f"{path} has no readable header line; move the file aside to log from this session")
     if header and header[:len(COLUMNS)] != COLUMNS:
-        header = COLUMNS + [column for column in header if column not in COLUMNS]
-        lines = [header] + [[row.get(column) or "" for column in header] for row in rows]
-        write_atomically(path, "".join("\t".join(line) + "\n" for line in lines))
-    with path.open("a", encoding="utf-8", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=header or COLUMNS, delimiter="\t",
-                                lineterminator="\n", restval="")
+        moved = COLUMNS + [column for column in header if column not in COLUMNS]
+        out = [tsv_line(moved)]
+        for _, raw in lines[1:]:
+            entry, _ = parse_line(raw, header)
+            out.append(tsv_line([entry.get(column) or "" for column in moved]) if entry else raw + b"\n")
+        write_atomically(path, b"".join(out))
+        header = moved
+        data = b"".join(out)
+    prefix = b"\n" if data and not data.endswith(b"\n") else b""
+    with path.open("ab") as handle:
         if not header:
-            writer.writeheader()
-        writer.writerow(values)
-    return (path.stem, len(rows))
+            handle.write(tsv_line(COLUMNS))
+        handle.write(prefix + tsv_line([values.get(column, "") for column in header or COLUMNS]))
 
 
 def now():
@@ -316,10 +404,14 @@ def measure_agent(session, agent_id, model):
     }
 
 
-def above(x, s):
-    """Whether setting x dominates setting s: no lower a model (fable ranks top), no lower a level, not equal."""
-    return (x != s and MODELS.index(x[0]) >= MODELS.index(s[0])
-            and LEVELS.index(x[1]) >= LEVELS.index(s[1]))
+def above(y, x):
+    """Whether setting y is above setting x: no lower a model (fable ranks top), no lower a level, not equal."""
+    return (y != x and MODELS.index(y[0]) >= MODELS.index(x[0])
+            and LEVELS.index(y[1]) >= LEVELS.index(x[1]))
+
+
+def dominates(y, x):
+    return y == x or above(y, x)
 
 
 def rung_up(setting):
@@ -343,140 +435,112 @@ def rungs_down(setting):
     return rungs
 
 
-def trailing(outcomes, value):
-    count = 0
-    for outcome in reversed(outcomes):
-        if outcome != value:
-            break
-        count += 1
-    return count
+def is_baseline(entry):
+    return (entry["kind"] == "baseline" and entry["model"] in MODELS and entry["level"] in ROW_LEVELS
+            and entry["role"] in BASELINE_ROLES)
 
 
-class Fold:
-    """Every row's state after folding the log's entries in order.
+def run_setting(entry):
+    """The setting a judged run counts at, or None for an entry that is no evidence."""
+    model = family(entry["model"])
+    if (entry["kind"] != "run" or entry["outcome"] not in JUDGED or model not in MODELS
+            or entry["level"] not in ROW_LEVELS):
+        return None
+    return (model, entry["level"])
 
-    `rows` maps a row to its setting (None until its first baseline), how it
-    entered that setting (baseline, down, up), the setting it stepped down
-    from, its tenure (the outcomes of its runs at the setting since it
-    entered it), and its last action and reason. `events` maps each entry's
-    key to the row's setting just before the entry and the step it caused.
-    """
 
-    def __init__(self, entries, oracles):
-        self.oracles = oracles  # row → bool, from the current table; a row absent from it has no oracle
-        self.rows = {}
-        self.history = defaultdict(list)  # row → (setting, outcome) of its judged runs, side runs excluded
-        self.failures = defaultdict(int)  # (row, setting, model id) → steps up out of that setting
-        self.newest = {}  # family → its id with the highest version among the runs so far
-        self.events = {}
+class Evidence:
+    """One row's evidence: its latest baseline and, per setting, its counted runs as (time, outcome) in order."""
+
+    def __init__(self, baseline, entries):
+        self.baseline = baseline
+        self.runs = defaultdict(list)
+        fresh = baseline["role"] == "fresh"
         for entry in entries:
-            self.apply(entry)
+            setting = run_setting(entry)
+            if setting and not (fresh and entry["at"] <= baseline["at"]):
+                self.runs[setting].append((entry["at"], entry["outcome"]))
 
-    def state(self, row):
-        if row not in self.rows:
-            self.rows[row] = {"setting": None, "entered": None, "came_from": None, "tenure": [],
-                              "action": None, "reason": None}
-        return self.rows[row]
+    def misses(self, setting):
+        return [at for at, outcome in self.runs[setting] if outcome == "missed"]
 
-    def current(self, model):
-        return self.newest.get(model)
+    def window(self, setting):
+        return [outcome for _, outcome in self.runs[setting][-WINDOW:]]
 
-    def need(self, row, target):
-        """The streak a step down to `target` needs: doubled per failure at it or a setting that dominates it."""
-        k = sum(count for (r, setting, model_id), count in self.failures.items()
-                if r == row and model_id == self.current(setting[0])
-                and (setting == target or above(setting, target)))
-        return STREAK * 2 ** k
+    def failing(self, setting):
+        runs = self.runs[setting]
+        return bool(runs) and runs[-1][1] == "missed" and self.window(setting).count("missed") >= RAISE_AT
 
-    def apply(self, entry):
-        row = entry["row"]
-        state = self.state(row)
-        self.events[entry["key"]] = {"before": state["setting"], "step": None}
-        if entry["kind"] == "baseline":
-            self.baseline(entry, row, state)
-        elif entry["kind"] == "run":
-            self.run(entry, row, state)
+    def region(self, c, s):
+        """The settings whose misses bear on a step from s down to c: those dominating c but not s."""
+        return [y for y in SETTINGS if dominates(y, c) and not dominates(y, s)]
 
-    def baseline(self, entry, row, state):
-        setting = (entry["model"], entry["level"])
-        if setting[0] not in MODELS or setting[1] not in ROW_LEVELS or entry["role"] not in BASELINE_ROLES:
-            return
-        tenure = []
-        if entry["role"] == "carry":
-            for earlier, outcome in reversed(self.history[row]):
-                if earlier != setting:
-                    break
-                tenure.insert(0, outcome)
-        state.update(setting=setting, entered="baseline", came_from=None, tenure=tenure)
-        self.evaluate(entry, row, state)
+    def need(self, c, s):
+        return STREAK * 2 ** sum(len(self.misses(y)) for y in self.region(c, s))
 
-    def run(self, entry, row, state):
-        model = family(entry["model"])
-        if model in MODELS:
-            newest = self.newest.get(model)
-            if newest is None or version(entry["model"]) > version(newest):
-                self.newest[model] = entry["model"]
-        if entry["outcome"] not in JUDGED or model not in MODELS or entry["level"] not in LEVELS:
-            return
-        setting = (model, entry["level"])
-        if entry["role"] == "lower":  # a legacy pair's side run, below the row's setting
-            if entry["outcome"] == "missed":
-                self.failures[(row, setting, entry["model"])] += 1
-            return
-        if entry["role"] == "escalation":
-            return
-        self.history[row].append((setting, entry["outcome"]))
-        if state["setting"] != setting:
-            return  # off-setting: no baseline yet, or a session still running the row's old setting
-        state["tenure"].append(entry["outcome"])
-        self.evaluate(entry, row, state)
+    def streak(self, s, c):
+        """The met runs at s after the latest miss at s or in region(c, s)."""
+        times = self.misses(s) + [at for y in self.region(c, s) for at in self.misses(y)]
+        since = max(times) if times else None
+        return sum(1 for at, outcome in self.runs[s] if outcome == "met" and (since is None or at > since))
 
-    def evaluate(self, entry, row, state):
-        setting, tenure = state["setting"], state["tenure"]
-        if state["entered"] == "down" and 0 < len(tenure) <= STREAK and tenure[-1] == "missed":
-            back = state["came_from"]
-            return self.step(entry, row, state, "up", back,
-                             f"a miss within its first {STREAK} runs after stepping down from {name(back)}")
-        window = tenure[-WINDOW:]
-        misses = window.count("missed")
-        if misses >= RAISE_AT:
-            target = rung_up(setting)
-            if target is None:
-                return self.hold(state, "misses at the top of its ladder: refresh-ladder sets it")
-            return self.step(entry, row, state, "up", target,
-                             f"{misses} of the last {len(window)} runs at {name(setting)} missed")
-        if not self.oracles.get(row, False):
-            return self.hold(state, "no oracle: refresh-ladder sets it")
-        rungs = rungs_down(setting)
-        if not rungs:
-            return self.hold(state, "at the floor")
-        streak = trailing(tenure, "met")
-        for rung in rungs:
-            need = self.need(row, rung)
+
+def walk(evidence, oracle):
+    """A row's setting from its evidence: up while failing, then (with an oracle) down while a streak pays."""
+    setting = (evidence.baseline["model"], evidence.baseline["level"])
+    path, reasons = [setting], []
+    while evidence.failing(setting) and rung_up(setting):
+        window = evidence.window(setting)
+        reasons.append(f"{window.count('missed')} of the last {len(window)} runs at {name(setting)} missed")
+        setting = rung_up(setting)
+        path.append(setting)
+    top = evidence.failing(setting)
+    moved = oracle
+    while moved:
+        moved = False
+        for rung in rungs_down(setting):
+            streak, need = evidence.streak(setting, rung), evidence.need(rung, setting)
             if streak >= need:
-                return self.step(entry, row, state, "down", rung, f"streak {streak} of {need}")
-        return self.hold(state, f"streak {streak} of {self.need(row, rungs[0])} for {name(rungs[0])}")
+                reasons.append(f"streak {streak} of {need}")
+                setting = rung
+                path.append(setting)
+                moved = True
+                break
+    rungs = rungs_down(setting)
+    streak = (f"{evidence.streak(setting, rungs[0])} of {evidence.need(rungs[0], setting)} for {name(rungs[0])}"
+              if rungs and oracle else "-")
+    if top:
+        reason = TOP
+    elif not oracle:
+        reason = NO_ORACLE
+    elif not rungs:
+        reason = FLOOR
+    else:
+        reason = f"streak {streak}"
+    window = evidence.window(setting)
+    return {
+        "setting": setting, "path": path, "streak": streak, "reason": reason,
+        "misses": f"{window.count('missed')}/{len(window)}",
+        # Why the row is where it is: the last step that put it there, or why it holds at its baseline.
+        "why": reasons[-1] if reasons else reason,
+    }
 
-    def hold(self, state, reason):
-        state.update(action="hold", reason=reason)
 
-    def step(self, entry, row, state, direction, target, reason):
-        source = state["setting"]
-        if direction == "up":
-            # The failure belongs to the version that missed; a carried baseline has no run, so its current one.
-            ran_on = entry["model"] if entry["kind"] == "run" else self.current(source[0])
-            self.failures[(row, source, ran_on)] += 1
-        state.update(setting=target, entered=direction, came_from=source if direction == "down" else None,
-                     tenure=[], action=f"step {direction} {name(source)} → {name(target)}", reason=reason)
-        self.events[entry["key"]]["step"] = {"direction": direction, "from": source, "to": target, "reason": reason}
-
-
-def fold(table, entries):
-    return Fold(entries, {row: spec["oracle"] for row, spec in table.items()})
+def walks(table, entries):
+    """Every table row with a baseline → its walk."""
+    baselines = {}
+    by_row = defaultdict(list)
+    for entry in entries:
+        by_row[entry["row"]].append(entry)
+        if is_baseline(entry):
+            baselines[entry["row"]] = entry  # entries are in time order, so the last is the latest
+    return {row: dict(walk(Evidence(baselines[row], by_row[row]), spec["oracle"]), baseline=baselines[row])
+            for row, spec in table.items() if row in baselines}
 
 
-def print_step(row, step):
-    print(f"STEP {step['direction'].upper()}: {row} {name(step['from'])} → {name(step['to'])} ({step['reason']})")
+def move_line(row, source, target, why):
+    word = "STEP UP" if above(target, source) else "STEP DOWN" if above(source, target) else "MOVE"
+    return f"{word}: {row} {name(source)} → {name(target)} ({why})"
 
 
 def command_add(args):
@@ -492,9 +556,11 @@ def command_add(args):
         fail("--workflow and --label go together")
     session, path = session_log()
     agent_id = args.agent or workflow_agent(session, args.workflow, args.label)
-    if any(entry["agent"] == agent_id for entry in read_log()):
+    entries, _ = read_log()
+    if any(entry["agent"] == agent_id for entry in entries):
         fail(f"agent {agent_id} is already logged; a launch is logged once, when its Done is judged")
     measured = measure_agent(session, agent_id, args.model)
+    before = walks(table, entries).get(args.row)
 
     append_entry(path, {
         "time": now(), "kind": "run", "model": args.model, "row": args.row, "level": args.level,
@@ -503,15 +569,18 @@ def command_add(args):
     print(f"logged {args.row} {args.level} {args.role} {args.outcome}: {measured['requests']} requests, "
           f"{measured['model_secs']}s model, {measured['tool_secs']}s tools, {measured['idle_secs']}s idle")
 
-    entries = read_log()
-    key = next(entry["key"] for entry in entries if entry["agent"] == agent_id)
-    event = fold(table, entries).events[key]
-    if event["before"] is None:
+    entries, skipped = read_log()
+    after = walks(table, entries).get(args.row)
+    if before is None or after is None:  # a run adds no baseline, so the two agree
         print(f"{args.row} has no setting yet: record one with effort-log baseline")
-    elif event["step"]:
-        print_step(args.row, event["step"])
-    elif args.role == "single" and (family(args.model), args.level) != event["before"]:
-        print(f"off-setting: {args.row} runs at {name(event['before'])}; this run is evidence only")
+    else:
+        ran_at = (family(args.model), args.level)
+        if ran_at != before["setting"]:
+            print(f"note: this run was at {name(ran_at)}; {args.row} is at {name(before['setting'])}")
+        if after["setting"] != before["setting"]:
+            print(move_line(args.row, before["setting"], after["setting"], after["why"]))
+    if skipped:
+        print(f"note: {skipped_text(skipped)}")
 
 
 def table_setting(row, spec):
@@ -549,38 +618,38 @@ def command_baseline(args):
 
     _, path = session_log()
     role = "carry" if args.carry else "fresh"
-    keys = []
     for row, setting in settings:
-        keys.append((row, append_entry(path, {
+        append_entry(path, {
             "time": now(), "kind": "baseline", "model": setting[0], "row": row, "level": setting[1],
             "role": role, "note": note,
-        })))
+        })
         print(f"baseline {row} {name(setting)} ({role})")
-    events = fold(table, read_log()).events
-    for row, key in keys:
-        step = events.get(key, {}).get("step")
-        if step:
-            print_step(row, step)
+    entries, skipped = read_log()
+    rows = walks(table, entries)
+    for row, setting in settings:
+        if rows[row]["setting"] != setting:
+            print(move_line(row, setting, rows[row]["setting"], rows[row]["why"]))
+    if skipped:
+        print(f"note: {skipped_text(skipped)}")
 
 
 def command_tally(args):
     table = read_table()
-    entries = read_log()
-    rows = fold(table, entries).rows
-    width = max(len("row"), *map(len, table)) + 2
-    print(f"{'row':<{width}}{'oracle':<8}{'setting':<15}{'entered':<10}{'tenure':>7}{'streak':>8}{'misses':>8}"
-          f"  last action")
+    entries, skipped = read_log()
+    rows = walks(table, entries)
+    lines = [["row", "oracle", "baseline", "setting", "misses", "streak", "path", "reason"]]
     for row, spec in table.items():
-        state = rows.get(row)
         oracle = "yes" if spec["oracle"] else "no"
-        if not state or state["setting"] is None:
-            print(f"{row:<{width}}{oracle:<8}{'no setting':<15}{'-':<10}{'-':>7}{'-':>8}{'-':>8}  -")
+        state = rows.get(row)
+        if state is None:
+            lines.append([row, oracle, "-", "no setting", "-", "-", "-", "no baseline"])
             continue
-        tenure = state["tenure"]
-        window = tenure[-WINDOW:]
-        misses = f"{window.count('missed')}/{len(window)}"
-        print(f"{row:<{width}}{oracle:<8}{name(state['setting']):<15}{state['entered']:<10}{len(tenure):>7}"
-              f"{trailing(tenure, 'met'):>8}{misses:>8}  {state['action']} ({state['reason']})")
+        base = state["baseline"]
+        lines.append([row, oracle, f"{base['model']} {base['level']} {base['role']}", name(state["setting"]),
+                      state["misses"], state["streak"], " → ".join(map(name, state["path"])), state["reason"]])
+    widths = [max(len(line[column]) for line in lines) for column in range(len(lines[0]) - 1)]
+    for line in lines:
+        print("  ".join(cell.ljust(width) for cell, width in zip(line, widths)) + "  " + line[-1])
 
     runs = [e for e in entries if e["kind"] == "run"]
     for row in table:
@@ -596,43 +665,52 @@ def command_tally(args):
     orphans = sorted({e["row"] for e in entries} - set(table))
     if orphans:
         print(f"logged rows no longer in the table: {', '.join(orphans)}")
-    unset = [row for row in table if not rows.get(row) or rows[row]["setting"] is None]
+    unset = [row for row in table if row not in rows]
     if unset:
         print(f"table rows with no baseline: {', '.join(unset)}")
+    if skipped:
+        print(skipped_text(skipped))
 
 
-def settings_block():
-    """The markdown block `settings` prints, or None when the store, table or log cannot be read."""
-    if not LOG_DIR.is_dir():
-        return None
-    table = read_table()
-    rows = fold(table, read_log()).rows
-    set_rows = [(row, rows[row]["setting"]) for row in table if row in rows and rows[row]["setting"]]
-    unset = [row for row in table if row not in rows or rows[row]["setting"] is None]
-    lines = ["The task-table rows' current model and effort, from the effort log:"]
-    if set_rows:
-        lines += ["", "| Row | Model | Effort |", "|---|---|---|"]
-        lines += [f"| `{row}` | {setting[0]} | {setting[1]} |" for row, setting in set_rows]
-    if unset:
-        lines += ["", "No setting in the effort log yet: " + ", ".join(f"`{row}`" for row in unset) + "."]
+def settings_text():
+    """What `settings` prints: every row's setting, or what keeps the log from giving them and what fixes it."""
+    lead = "The task-table rows' current model and effort, from the effort log:"
+    if store_missing():
+        return f"The effort log sets no task-table row: {STORE_MISSING}."
+    try:
+        table = read_table()
+    except Refusal as refusal:
+        return f"The effort log sets no task-table row: {refusal}. Fix the task table in the user CLAUDE.md."
+    entries, skipped = read_log()
+    rows = walks(table, entries)
+    if rows:
+        lines = [lead, "", "| Row | Model | Effort |", "|---|---|---|"]
+        lines += [f"| `{row}` | {rows[row]['setting'][0]} | {rows[row]['setting'][1]} |" for row in table if row in rows]
+        unset = [row for row in table if row not in rows]
+        if unset:
+            lines += ["", "No setting in the effort log yet: " + ", ".join(f"`{row}`" for row in unset) + "."]
+    else:
+        lines = [f"The effort log sets no task-table row: {NO_BASELINE}."]
+    if skipped:
+        lines += ["", f"The effort log {skipped_text(skipped)}."]
     return "\n".join(lines)
 
 
 def command_settings(args):
-    # A SessionStart hook must never break a session: any failure prints nothing.
+    # A SessionStart hook must never break a session, and must never go silent: every failure is named.
     try:
-        block = settings_block()
-    except Exception:  # noqa: BLE001
-        block = None
-    if block:
-        print(block)
+        text = settings_text()
+    except Exception as error:  # noqa: BLE001
+        text = (f"The effort log sets no task-table row: it failed ({type(error).__name__}: {error}); "
+                f"run effort-log tally to see the problem.")
+    print(text)
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     commands = parser.add_subparsers(dest="command", required=True)
 
-    add = commands.add_parser("add", help="record one judged launch, and report when it steps its row")
+    add = commands.add_parser("add", help="record one judged launch, and report when it moves its row")
     add.add_argument("--row", required=True, help="task-table row key")
     add.add_argument("--level", required=True, choices=LEVELS, help="effort the run used")
     add.add_argument("--outcome", required=True, choices=OUTCOMES)
@@ -654,10 +732,10 @@ def main():
                           help="one baseline per table row, from its Model and Effort cells")
     baseline.add_argument("--note", help="who set it and why")
     baseline.add_argument("--carry", action="store_true",
-                          help="seed the tenure with the row's trailing runs at the setting (default: start it empty)")
+                          help="count the row's earlier runs too (default: only runs after the baseline)")
     baseline.set_defaults(handler=command_baseline)
 
-    tally = commands.add_parser("tally", help="every row's setting and last action, and rows with recurring brief misses")
+    tally = commands.add_parser("tally", help="every row's setting, how the log reached it, and rows with recurring brief misses")
     tally.set_defaults(handler=command_tally)
 
     settings = commands.add_parser("settings", help="every row's current setting as markdown, for a SessionStart hook")
@@ -665,8 +743,8 @@ def main():
 
     args = parser.parse_args()
     try:
-        if args.command != "settings" and not (LOG_DIR_SET and TABLE_SET) and not STORE.is_dir():
-            fail(f"the orchestration plugin's effort log needs the claude-memory-sync plugin installed ({STORE} is missing); run /claude-memory-sync:install")
+        if args.command != "settings" and store_missing():
+            fail(STORE_MISSING)
         args.handler(args)
     except Refusal as refusal:
         print(f"effort-log: {refusal}", file=sys.stderr)
